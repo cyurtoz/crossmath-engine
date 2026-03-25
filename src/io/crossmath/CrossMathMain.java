@@ -23,25 +23,33 @@ import java.util.Random;
 public class CrossMathMain {
 
     public static void main(String[] args) {
-        long seed              = args.length > 0 ? Long.parseLong(args[0])    : System.currentTimeMillis();
+
+    try {
+        run(args);
+    } catch (Exception e) {
+        main(args);
+    }
+    }
+
+    static void run(String[] args) {
+                long seed              = args.length > 0 ? Long.parseLong(args[0])    : System.currentTimeMillis();
         int  equationsToHide   = args.length > 1 ? Integer.parseInt(args[1])  : 4;
-        int  maxCellValue      = args.length > 2 ? Integer.parseInt(args[2])  : 100;
+        int  maxCellValue      = args.length > 2 ? Integer.parseInt(args[2])  : 299;
         int  matrixSize        = args.length > 3 ? Integer.parseInt(args[3])  : 5;
         int  minUsagePerOp     = args.length > 4 ? Integer.parseInt(args[4])  : 2;
-
-        printHeader(seed, equationsToHide, maxCellValue, matrixSize, minUsagePerOp);
+        int  numBrackets       = args.length > 5 ? Integer.parseInt(args[5])  : 4;
 
         // ── Configuration ─────────────────────────────────────────────────────
         PuzzleConfig config = PuzzleConfig.builder()
             .matrixSize(matrixSize)
             .minCellValue(1)
-            .maxCellValue(maxCellValue)
-            .maxGenerationAttempts(1000)
+            .maxCellValue(100)
+            .maxGenerationAttempts(10000)
             .minUsagePerOperator(minUsagePerOp)
+            .numBrackets(numBrackets)
             .build();
 
-        System.out.println("  " + config);
-        System.out.println();
+
 
         // ── Shared random source — one instance guarantees full reproducibility ──
         Random random = new Random(seed);
@@ -60,6 +68,10 @@ public class CrossMathMain {
         // ── Generate ───────────────────────────────────────────────────────────
         CrossMathGenerator generator = new CrossMathGenerator(config, registry, random);
         PuzzleGrid solvedGrid = generator.generate();
+        printHeader(seed, equationsToHide, maxCellValue, matrixSize, minUsagePerOp, numBrackets);
+
+        System.out.println("  " + config);
+        System.out.println();
 
         // ── Verify ─────────────────────────────────────────────────────────────
         System.out.println("  Verification: " + (solvedGrid.verify() ? "✓  PASS" : "✗  FAIL"));
@@ -79,13 +91,15 @@ public class CrossMathMain {
         puzzlePrinter.printPuzzle();
     }
 
+     
+
     private static void printHeader(long seed, int equationsToHide, int maxCellValue,
-                                    int matrixSize, int minUsagePerOp) {
-        String horizontalRule = "═".repeat(56);
+                                    int matrixSize, int minUsagePerOp, int numBrackets) {
+        String horizontalRule = "═".repeat(60);
         System.out.println(horizontalRule);
         System.out.println("  CrossMath Puzzle Generator");
-        System.out.printf("  seed=%-15d  hide=%-3d  maxCellValue=%-4d  matrixSize=%d  minUsage=%d%n",
-            seed, equationsToHide, maxCellValue, matrixSize, minUsagePerOp);
+        System.out.printf("  seed=%-12d  hide=%-3d  maxVal=%-4d  n=%d  minUsage=%d  brackets=%d%n",
+            seed, equationsToHide, maxCellValue, matrixSize, minUsagePerOp, numBrackets);
         System.out.println(horizontalRule);
         System.out.println();
     }

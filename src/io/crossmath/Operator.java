@@ -9,67 +9,40 @@ import java.util.Random;
  * Strategy interface for a single arithmetic operation.
  *
  * <h2>Extension contract</h2>
- * To add a new operator (MIN, MAX, EXP, SQRT, …):
- * <ol>
- *   <li>Create a class that implements this interface.</li>
- *   <li>Register an instance via {@link OperatorRegistry#add}.</li>
- * </ol>
- * No other class needs to change.
+ * To add a new operator: implement this interface and register via
+ * {@link OperatorRegistry#add}. No other class needs to change.
  *
- * <h2>Unary operators (e.g. SQRT)</h2>
- * Override {@link #isUnary()} to return {@code true}.
- * By convention, {@code rightOperand = 0} is passed for unary operations;
- * the implementation ignores it.
- *
- * <h2>Operator-first generation</h2>
- * The generator picks the most underused operator first, then calls
- * {@link #validRightOperands} to get the full list of right operands that
- * produce a valid result for a given left operand.  The caller iterates the
- * entire list before giving up on the operator.
- *
- * <p>Why a list instead of a single value: returning one value means that if
- * it fails to connect the horizontal equation chain, the caller abandons the
- * operator entirely and falls back to the next one.  But there may be several
- * valid right operands for that operator, and a different one might have
- * worked.  Returning the full list exhausts all possibilities before giving up.
- *
- * <p>Example — division with {@code leftValue=12}, {@code maxDivisor=50}:
- * {@code validRightOperands} returns {@code [3, 6, 2, 4]} (shuffled).
- * If {@code 12/3=4} fails the chain, the caller still tries {@code 12/6=2},
- * {@code 12/2=6}, {@code 12/4=3} before abandoning division.
+ * <h2>Two methods, one contract</h2>
+ * <ul>
+ *   <li>{@link #apply} — validates and computes the result for a given pair;
+ *       returns {@code Integer.MIN_VALUE} on any constraint violation.</li>
+ *   <li>{@link #validRightOperands} — returns every right operand that passes
+ *       {@code apply} for a given left operand, shuffled. The generator
+ *       iterates the full list before giving up on an operator.</li>
+ * </ul>
  */
 public interface Operator {
 
-    /**
-     * Single-character symbol shown in the puzzle grid (e.g. {@code '+'}).
-     */
+    /** Single-character symbol shown in the puzzle grid (e.g. {@code '+'}). */
     char symbol();
 
     /**
-     * Applies this operator to ({@code leftOperand}, {@code rightOperand}) and
-     * validates all constraints owned by this operator.
+     * Applies this operator and validates all constraints.
      *
      * @param leftOperand  left side of the equation
      * @param rightOperand right side (ignored when {@link #isUnary()} is true)
-     * @param config       active puzzle configuration supplying derived limits
-     * @return             the valid result, or {@code Integer.MIN_VALUE} if any
-     *                     constraint is violated or the operation is undefined
+     * @param config       active puzzle configuration
+     * @return             the valid result, or {@code Integer.MIN_VALUE} on any violation
      */
     int apply(int leftOperand, int rightOperand, PuzzleConfig config);
 
     /**
-     * Returns all right operands that produce a valid result when combined with
-     * {@code leftOperand} under this operator, in a shuffled order.
+     * Returns every right operand that passes {@link #apply} for this
+     * {@code leftOperand}, in shuffled order.
      *
-     * <p>The default implementation scans the additive range and collects all
-     * candidates that pass {@link #apply}.  Operators with a computable valid
-     * domain (divide, multiply) should override this to enumerate that domain
-     * directly rather than scanning — it is both faster and more complete.
-     *
-     * @param leftOperand left operand of this equation (already fixed)
-     * @param config      active puzzle configuration
-     * @param random      shared random source used only for shuffling
-     * @return            shuffled list of all valid right operands; empty if none
+     * <p>Operators with a computable valid domain should enumerate it directly
+     * (exact, no misses). The default scans {@code [minCellValue, maxAddOperand]}
+     * which is a reasonable fallback for operators with no tighter structure.
      */
     default List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
@@ -82,9 +55,7 @@ public interface Operator {
         return valid;
     }
 
-    /**
-     * Human-readable description of this operator's constraints.
-     */
+    /** Human-readable description of this operator's constraints. */
     String constraints();
 
     /**

@@ -14,11 +14,9 @@ import java.util.Random;
  *   <li>Sum ∈ [{@code minCellValue}, {@code maxCellValue}].</li>
  * </ul>
  *
- * <p>The {@code maxAddOperand} cap is applied when picking fresh free operands
- * (via {@link #validRightOperands}) to keep sums in a reasonable range.
- * It is intentionally absent from {@link #apply} so that chained result values
- * larger than {@code maxAddOperand} are not rejected when they appear as left
- * operands of subsequent equations.
+ * <p>The {@code maxAddOperand} cap is not enforced in {@link #apply} so that
+ * chained result values larger than the cap are not rejected when they appear
+ * as left operands of subsequent equations.
  */
 public class AddOperator implements Operator {
 
@@ -42,14 +40,14 @@ public class AddOperator implements Operator {
 
     /**
      * Enumerates all right operands in [{@code minCellValue},
-     * min({@code maxAddOperand}, {@code maxCellValue − leftOperand})]
-     * so every returned value produces a sum within bounds.
+     * {@code maxCellValue − leftOperand}] so every returned value
+     * produces a sum within bounds.
      */
     @Override
     public List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
 
-        int maxRight = Math.min(config.maxCellValue - leftOperand, config.maxAddOperand);
+        int maxRight = config.maxCellValue - leftOperand;
 
         for (int right = config.minCellValue; right <= maxRight; right++) {
             valid.add(right);

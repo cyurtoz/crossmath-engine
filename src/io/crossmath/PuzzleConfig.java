@@ -64,12 +64,43 @@ public final class PuzzleConfig {
     /**
      * Minimum number of times each registered operator must appear across
      * all equations in the final grid.
-     *
-     * <p>Default is 2 — every operator the caller registers will appear at
-     * least twice, ensuring no operator is silently ignored.  Set to 1 to
-     * require a single occurrence, or 0 to disable the check entirely.
      */
     public final int minUsagePerOperator;
+
+    /**
+     * Maximum safe value for a freshly picked free operand.
+     *
+     * <p>This is a <b>grid geometry constraint</b>, not an operator constraint.
+     * A horizontal chain of {@code equationsPerLine} additions applied to free
+     * operands can produce a result column value up to
+     * {@code (equationsPerLine + 1) × cap}.  Two such source rows added
+     * vertically in the derived row produce a value up to
+     * {@code 2 × (equationsPerLine + 1) × cap}.  Setting that equal to
+     * {@code maxCellValue} gives:
+     * <pre>
+     *   cap = maxCellValue / (2 × (equationsPerLine + 1))
+     * </pre>
+     * Example: matrixSize=5, maxCellValue=100 → cap = 100/6 ≈ 16.
+     *
+     * <p>This cap is applied to ALL free operand picks regardless of operator.
+     * It is conservative for subtract and divide (whose results shrink or are
+     * bounded), but guarantees correctness for addition-only puzzles — which
+     * is the only case that would otherwise overflow.  For larger numbers in
+     * addition-only puzzles, increase {@code maxCellValue} (e.g. 500 or 999).
+     */
+    public final int maxChainSafeOperand;
+
+    /**
+     * Number of equal-width brackets used for operand selection.
+     *
+     * <p>The range {@code [minCellValue, maxChainSafeOperand]} is divided into
+     * this many segments and picks cycle through them round-robin, ensuring
+     * small, medium, and large values all appear in the puzzle rather than
+     * clustering near the minimum.
+     *
+     * <p>Default: 4.  Set to 1 for uniform random selection.
+     */
+    public final int numBrackets;
 
     // ── Construction via builder ──────────────────────────────────────────────
 
@@ -94,6 +125,10 @@ public final class PuzzleConfig {
         this.maxDivisionDivisor     = builder.maxCellValue / 2;
         this.maxGenerationAttempts  = builder.maxGenerationAttempts;
         this.minUsagePerOperator    = builder.minUsagePerOperator;
+
+        int chainLength             = (builder.matrixSize - 1) / 2 + 1;  // equationsPerLine + 1
+        this.maxChainSafeOperand    = Math.max(1, builder.maxCellValue / (2 * chainLength));
+        this.numBrackets            = Math.max(1, builder.numBrackets);
     }
 
     public static Builder builder() {
@@ -104,9 +139,9 @@ public final class PuzzleConfig {
     public String toString() {
         return String.format(
             "PuzzleConfig{matrixSize=%d, cellValues=[%d..%d], equationsPerLine=%d, " +
-            "maxAddOperand=%d, maxMultiplyOperand=%d, maxDivisionDivisor=%d, minUsagePerOperator=%d}",
+            "maxChainSafeOperand=%d, numBrackets=%d, minUsagePerOperator=%d}",
             matrixSize, minCellValue, maxCellValue, equationsPerLine,
-            maxAddOperand, maxMultiplyOperand, maxDivisionDivisor, minUsagePerOperator);
+            maxChainSafeOperand, numBrackets, minUsagePerOperator);
     }
 
     // ── Builder ───────────────────────────────────────────────────────────────
@@ -118,6 +153,7 @@ public final class PuzzleConfig {
         private int maxCellValue          = 100;
         private int maxGenerationAttempts = 1000;
         private int minUsagePerOperator   = 2;
+        private int numBrackets           = 4;
 
         /** Grid dimension — must be odd and ≥ 3 (default 5 → 9×9 display). */
         public Builder matrixSize(int matrixSize) {
@@ -145,10 +181,20 @@ public final class PuzzleConfig {
 
         /**
          * Minimum times each registered operator must appear in the finished grid
-         * (default 2).  Set to 1 for at-least-once, 0 to disable the check.
+         * (default 2). Set to 1 for at-least-once, 0 to disable.
          */
         public Builder minUsagePerOperator(int minUsagePerOperator) {
             this.minUsagePerOperator = minUsagePerOperator;
+            return this;
+        }
+
+        /**
+         * Number of equal-width brackets for operand selection (default 4).
+         * Picks cycle round-robin through brackets so all value ranges appear.
+         * Set to 1 for uniform random selection.
+         */
+        public Builder numBrackets(int numBrackets) {
+            this.numBrackets = numBrackets;
             return this;
         }
 
