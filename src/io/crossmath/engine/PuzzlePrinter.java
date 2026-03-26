@@ -31,6 +31,11 @@ public class PuzzlePrinter {
 
     /** Precomputed set of occupied number-cell positions (in matrix coords). */
     private final boolean[][] occupied;
+    /** Bounding box of occupied cells so sparse shapes print without blank tails. */
+    private int minOccupiedRow;
+    private int maxOccupiedRow;
+    private int minOccupiedCol;
+    private int maxOccupiedCol;
 
     public PuzzlePrinter(PuzzleGrid grid, EquationMask mask) {
         this.grid        = grid;
@@ -39,6 +44,10 @@ public class PuzzlePrinter {
         this.displaySize = 2 * matrixSize - 1;
         this.symbolMap   = new HashMap<>();
         this.occupied    = new boolean[matrixSize][matrixSize];
+        this.minOccupiedRow = matrixSize;
+        this.maxOccupiedRow = -1;
+        this.minOccupiedCol = matrixSize;
+        this.maxOccupiedCol = -1;
         buildDisplayData();
     }
 
@@ -83,11 +92,17 @@ public class PuzzlePrinter {
                 if (occupied[r][c]) maxVal = Math.max(maxVal, Math.abs(grid.values[r][c]));
         int numWidth = Math.max(2, String.valueOf(maxVal).length());
         String numFormat = "%" + (numWidth + 2) + "s";
+        // Trim rendering to the occupied bounding box so normalized sparse
+        // shapes do not carry a full matrix of empty border cells.
+        int startDisplayRow = minOccupiedRow <= maxOccupiedRow ? minOccupiedRow * 2 : 0;
+        int endDisplayRow   = minOccupiedRow <= maxOccupiedRow ? maxOccupiedRow * 2 : displaySize - 1;
+        int startDisplayCol = minOccupiedCol <= maxOccupiedCol ? minOccupiedCol * 2 : 0;
+        int endDisplayCol   = minOccupiedCol <= maxOccupiedCol ? maxOccupiedCol * 2 : displaySize - 1;
 
         System.out.println();
-        for (int dr = 0; dr < displaySize; dr++) {
+        for (int dr = startDisplayRow; dr <= endDisplayRow; dr++) {
             System.out.print("    ");
-            for (int dc = 0; dc < displaySize; dc++) {
+            for (int dc = startDisplayCol; dc <= endDisplayCol; dc++) {
                 boolean rowEven = dr % 2 == 0;
                 boolean colEven = dc % 2 == 0;
 
@@ -138,6 +153,10 @@ public class PuzzlePrinter {
             // Mark all cells as occupied
             for (GridCell cell : arm.allCells()) {
                 occupied[cell.row()][cell.col()] = true;
+                minOccupiedRow = Math.min(minOccupiedRow, cell.row());
+                maxOccupiedRow = Math.max(maxOccupiedRow, cell.row());
+                minOccupiedCol = Math.min(minOccupiedCol, cell.col());
+                maxOccupiedCol = Math.max(maxOccupiedCol, cell.col());
             }
 
             if (!visible) continue;

@@ -20,9 +20,11 @@ import java.util.Set;
  * {@link ShapeGenerator} grows an asymmetric shape via BFS from a random
  * starting cell. Each arm is a 3-cell equation ({@code A op B = C}).
  *
- * <h3>Step 2 — Seed root intersections</h3>
- * Intersection cells that are NOT the result of any arm receive values from
- * the {@link BracketedPicker}. These are the "roots" of the dependency graph.
+ * <h3>Step 2 - Seed root cells</h3>
+ * Non-result entries from {@link PuzzleShape#intersections()} receive values
+ * from the {@link BracketedPicker}. In sparse shapes this set includes both
+ * true crossings and promoted branch anchors, so later arms have more roots
+ * to grow from.
  *
  * <h3>Step 3 — Fill arms in dependency order</h3>
  * Arms are topologically sorted: an arm that uses another arm's result cell
@@ -43,17 +45,31 @@ public class CrossMathGenerator {
         this.registry       = registry;
         this.random         = random;
         this.picker         = new BracketedPicker(
-            config.minCellValue, config.maxChainSafeOperand, config.numBrackets, random);
+            config.minCellValue, config.maxSeedValue, config.numBrackets, random);
         this.shapeGenerator = new ShapeGenerator(config, random);
     }
 
     // ── Public API ──────────────────────────────────────────────────────────
 
     public PuzzleGrid generate() {
+        // Fail fast when the operator floor demands more arms than the target
+        // shape size can ever supply.
+        validateUsageFeasibility();
+        int minimumArmsRequired = minimumArmsRequired();
+
         for (int attempt = 1; attempt <= config.maxGenerationAttempts; attempt++) {
             PuzzleShape shape = shapeGenerator.generate();
 
-            if (shape.armCount() < 2) continue;  // too small, retry shape
+            // Small shapes cannot satisfy the operator-usage floor, so skip
+            // them before spending time on numeric filling.
+            if (shape.armCount() < minimumArmsRequired) {
+                if (attempt % 200 == 0) {
+                    System.out.printf(
+                        "[Generator] Attempt %d - shape too small: %d arms (need >= %d)%n",
+                        attempt, shape.armCount(), minimumArmsRequired);
+                }
+                continue;
+            }
 
             PuzzleGrid grid = tryFillShape(shape);
             if (grid == null) continue;
@@ -85,7 +101,7 @@ public class CrossMathGenerator {
         PuzzleGrid              grid        = new PuzzleGrid(config, shape);
         Map<Character, Integer> usageCounts = initialUsageCounts();
 
-        // Step 2: Seed root intersections (not result of any arm)
+        // Step 2: Seed root cells that are not themselves produced by an arm.
         Set<GridCell> resultCells = new HashSet<>();
         for (EquationArm arm : shape.arms()) {
             resultCells.add(arm.resultCell());
@@ -170,8 +186,8 @@ public class CrossMathGenerator {
 
     /**
      * Fills a single arm's operator and free cell values.
-     * The arm's operand cells may already have values (seeded intersections
-     * or results from previously filled arms). The result cell is always free.
+     * The arm's operand cells may already have values (seeded root cells or
+     * results from previously filled arms). The result cell is always free.
      */
     private boolean fillArm(PuzzleGrid grid, EquationArm arm,
                              Map<Character, Integer> usageCounts) {
@@ -257,21 +273,24 @@ public class CrossMathGenerator {
 
     /** Both operands free → pick operator + both operands. */
     private boolean fillBothFree(PuzzleGrid grid, EquationArm arm,
-                                  GridCell cellA, GridCell cellB, GridCell cellR,
-                                  Map<Character, Integer> usageCounts) {
+                                   GridCell cellA, GridCell cellB, GridCell cellR,
+                                   Map<Character, Integer> usageCounts) {
         for (Operator op : operatorsByAscendingUsage(usageCounts)) {
-            int va = picker.next();
-            List<Integer> rights = op.validRightOperands(va, config, random);
-            if (!rights.isEmpty()) {
-                int vb = rights.get(0);
-                int result = op.apply(va, vb, config);
-                if (result != Integer.MIN_VALUE) {
-                    grid.setValue(cellA, va);
-                    grid.setValue(cellB, vb);
-                    grid.setValue(cellR, result);
-                    arm.setOperator(op);
-                    usageCounts.merge(op.symbol(), 1, Integer::sum);
-                    return true;
+            // Sparse shapes can tolerate a wider introduced-value range, so
+            // try a shuffled seedable pool instead of a single picker draw.
+            for (int va : candidateFreeOperands()) {
+                List<Integer> rights = op.validRightOperands(va, config, random);
+                if (!rights.isEmpty()) {
+                    int vb = rights.get(0);
+                    int result = op.apply(va, vb, config);
+                    if (result != Integer.MIN_VALUE) {
+                        grid.setValue(cellA, va);
+                        grid.setValue(cellB, vb);
+                        grid.setValue(cellR, result);
+                        arm.setOperator(op);
+                        usageCounts.merge(op.symbol(), 1, Integer::sum);
+                        return true;
+                    }
                 }
             }
         }
@@ -301,8 +320,29 @@ public class CrossMathGenerator {
     private List<Operator> operatorsByAscendingUsage(Map<Character, Integer> usageCounts) {
         List<Operator> sorted = registry.all();
         Collections.shuffle(sorted, random);
-        sorted.sort(Comparator.comparingInt(op -> usageCounts.getOrDefault(op.symbol(), 0)));
+        sorted.sort(Comparator
+            .comparingInt((Operator op) -> operatorPriority(op, usageCounts))
+            .thenComparingInt(op -> usageCounts.getOrDefault(op.symbol(), 0)));
         return sorted;
+    }
+
+    private int operatorPriority(Operator op, Map<Character, Integer> usageCounts) {
+        // Keep under-used operators at the front until they reach the minimum.
+        if (usageCounts.getOrDefault(op.symbol(), 0) < config.minUsagePerOperator) {
+            return 0;
+        }
+        return 1;
+    }
+
+    private List<Integer> candidateFreeOperands() {
+        List<Integer> candidates = new ArrayList<>();
+        // Sparse-shape roots and fully free operands now use maxSeedValue
+        // rather than the older dense-grid chain-safe cap.
+        for (int value = config.minCellValue; value <= config.maxSeedValue; value++) {
+            candidates.add(value);
+        }
+        Collections.shuffle(candidates, random);
+        return candidates;
     }
 
     // ── Usage counting ──────────────────────────────────────────────────────
@@ -345,5 +385,25 @@ public class CrossMathGenerator {
         if (!grid.verify()) {
             throw new IllegalStateException("BUG: grid failed verification.");
         }
+    }
+
+    private void validateUsageFeasibility() {
+        // Reject impossible operator quotas before burning generation attempts.
+        int requiredArms = minimumArmsRequiredByUsage();
+        if (requiredArms > config.targetEquationCount) {
+            throw new IllegalArgumentException(
+                "minUsagePerOperator=" + config.minUsagePerOperator +
+                " with " + registry.size() + " operators requires at least " +
+                requiredArms + " arms, but targetEquationCount=" +
+                config.targetEquationCount + ".");
+        }
+    }
+
+    private int minimumArmsRequired() {
+        return Math.max(2, minimumArmsRequiredByUsage());
+    }
+
+    private int minimumArmsRequiredByUsage() {
+        return Math.max(0, config.minUsagePerOperator) * registry.size();
     }
 }

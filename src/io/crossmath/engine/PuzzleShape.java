@@ -5,7 +5,10 @@ import java.util.Set;
 
 /**
  * The topology of a puzzle: which cells are used, how arms are laid out,
- * and which cells are intersections. Contains no numeric values.
+ * and which cells are seedable roots/intersections. Contains no numeric values.
+ *
+ * <p>In sparse generation, the intersection set doubles as the list of
+ * non-result cells that may receive initial seed values.
  */
 public class PuzzleShape {
 

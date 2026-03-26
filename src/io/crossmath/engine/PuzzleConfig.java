@@ -105,9 +105,21 @@ public final class PuzzleConfig {
     public final int maxChainSafeOperand;
 
     /**
+     * Maximum value for numbers introduced directly by the sparse shape
+     * generator (seeded roots and fully free operands).
+     *
+     * <p>This is intentionally separate from {@link #maxChainSafeOperand}.
+     * The old chain-safe cap was derived for dense matrix generation and is
+     * too conservative for sparse asymmetric shapes. By default we allow
+     * introduced values up to {@code maxAddOperand}, which keeps addition
+     * viable while still letting the picker reach the upper half of the range.
+     */
+    public final int maxSeedValue;
+
+    /**
      * Number of equal-width brackets used for operand selection.
      *
-     * <p>The range {@code [minCellValue, maxChainSafeOperand]} is divided into
+     * <p>The range {@code [minCellValue, maxSeedValue]} is divided into
      * this many segments and picks cycle through them round-robin, ensuring
      * small, medium, and large values all appear in the puzzle rather than
      * clustering near the minimum.
@@ -210,6 +222,11 @@ public final class PuzzleConfig {
         if (builder.maxCellValue <= builder.minCellValue) {
             throw new IllegalArgumentException("maxCellValue must be > minCellValue");
         }
+        if (builder.maxSeedValue >= 0 &&
+            (builder.maxSeedValue < builder.minCellValue || builder.maxSeedValue > builder.maxCellValue)) {
+            throw new IllegalArgumentException(
+                "maxSeedValue must be in [minCellValue, maxCellValue]");
+        }
 
         this.matrixSize             = builder.matrixSize;
         this.minCellValue           = builder.minCellValue;
@@ -231,6 +248,9 @@ public final class PuzzleConfig {
 
         int chainLength             = (builder.matrixSize - 1) / 2 + 1;  // equationsPerLine + 1
         this.maxChainSafeOperand    = Math.max(1, builder.maxCellValue / (2 * chainLength));
+        this.maxSeedValue           = builder.maxSeedValue >= 0
+                                    ? builder.maxSeedValue
+                                    : Math.max(builder.minCellValue, this.maxAddOperand);
         this.numBrackets            = Math.max(1, builder.numBrackets);
 
         // Target equation count
@@ -269,10 +289,10 @@ public final class PuzzleConfig {
     public String toString() {
         return String.format(
             "PuzzleConfig{matrixSize=%d, cellValues=[%d..%d], targetArms=%d, " +
-            "numBrackets=%d, minUsagePerOperator=%d, " +
+            "maxSeedValue=%d, numBrackets=%d, minUsagePerOperator=%d, " +
             "allowedOperators=%s}",
             matrixSize, minCellValue, maxCellValue, targetEquationCount,
-            numBrackets, minUsagePerOperator,
+            maxSeedValue, numBrackets, minUsagePerOperator,
             allowedOperators == null ? "all" : allowedOperators);
     }
 
@@ -291,6 +311,7 @@ public final class PuzzleConfig {
         private int maxAddOperand         = -1;
         private int maxMultiplyOperand    = -1;
         private int maxDivisionDivisor    = -1;
+        private int maxSeedValue          = -1;
 
         // Shape generation
         private int targetEquationCount   = -1;  // -1 = auto-compute
@@ -354,6 +375,15 @@ public final class PuzzleConfig {
          */
         public Builder maxDivisionDivisor(int maxDivisionDivisor) {
             this.maxDivisionDivisor = maxDivisionDivisor;
+            return this;
+        }
+
+        /**
+         * Maximum value for directly introduced sparse-shape numbers.
+         * Default: {@code maxAddOperand}, which is typically {@code maxCellValue / 2}.
+         */
+        public Builder maxSeedValue(int maxSeedValue) {
+            this.maxSeedValue = maxSeedValue;
             return this;
         }
 
