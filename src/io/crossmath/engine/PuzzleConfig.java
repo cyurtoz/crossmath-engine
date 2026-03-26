@@ -116,6 +116,15 @@ public final class PuzzleConfig {
      */
     public final int numBrackets;
 
+    /**
+     * Target number of equation arms for the shape generator.
+     * For matrixSize=3 (dense educational grid): defaults to 6 (full 3×3).
+     * For matrixSize=5: defaults to 10 (sparse asymmetric shape).
+     * For matrixSize=7: defaults to 21.
+     * Override via builder for custom density.
+     */
+    public final int targetEquationCount;
+
     // ── Operator filtering ────────────────────────────────────────────────────
 
     /**
@@ -224,6 +233,17 @@ public final class PuzzleConfig {
         this.maxChainSafeOperand    = Math.max(1, builder.maxCellValue / (2 * chainLength));
         this.numBrackets            = Math.max(1, builder.numBrackets);
 
+        // Target equation count
+        if (builder.targetEquationCount > 0) {
+            this.targetEquationCount = builder.targetEquationCount;
+        } else {
+            // Dense for small grids (matrixSize=3), sparse for larger
+            int epl = this.equationsPerLine;
+            this.targetEquationCount = builder.matrixSize <= 3
+                ? builder.matrixSize * epl * 2   // full dense (e.g. 6 for 3×3)
+                : builder.matrixSize * epl;       // ~half density
+        }
+
         // Operator filtering
         this.allowedOperators       = builder.allowedOperators == null
                                     ? null
@@ -248,13 +268,12 @@ public final class PuzzleConfig {
     @Override
     public String toString() {
         return String.format(
-            "PuzzleConfig{matrixSize=%d, cellValues=[%d..%d], equationsPerLine=%d, " +
-            "maxChainSafeOperand=%d, numBrackets=%d, minUsagePerOperator=%d, " +
-            "allowedOperators=%s, resultChainingPlayable=%s}",
-            matrixSize, minCellValue, maxCellValue, equationsPerLine,
-            maxChainSafeOperand, numBrackets, minUsagePerOperator,
-            allowedOperators == null ? "all" : allowedOperators,
-            resultChainingPlayable);
+            "PuzzleConfig{matrixSize=%d, cellValues=[%d..%d], targetArms=%d, " +
+            "numBrackets=%d, minUsagePerOperator=%d, " +
+            "allowedOperators=%s}",
+            matrixSize, minCellValue, maxCellValue, targetEquationCount,
+            numBrackets, minUsagePerOperator,
+            allowedOperators == null ? "all" : allowedOperators);
     }
 
     // ── Builder ───────────────────────────────────────────────────────────────
@@ -272,6 +291,9 @@ public final class PuzzleConfig {
         private int maxAddOperand         = -1;
         private int maxMultiplyOperand    = -1;
         private int maxDivisionDivisor    = -1;
+
+        // Shape generation
+        private int targetEquationCount   = -1;  // -1 = auto-compute
 
         // Operator filtering
         private Set<Character> allowedOperators = null;
@@ -332,6 +354,15 @@ public final class PuzzleConfig {
          */
         public Builder maxDivisionDivisor(int maxDivisionDivisor) {
             this.maxDivisionDivisor = maxDivisionDivisor;
+            return this;
+        }
+
+        /**
+         * Target number of equation arms for shape generation.
+         * Default: auto-computed (dense for matrixSize=3, sparse for larger).
+         */
+        public Builder targetEquationCount(int targetEquationCount) {
+            this.targetEquationCount = targetEquationCount;
             return this;
         }
 

@@ -1,185 +1,177 @@
 package io.crossmath.engine;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 /**
- * Renders a {@link PuzzleGrid} to the console as a formatted 2D display grid.
+ * Renders a sparse {@link PuzzleGrid} to the console.
  *
- * <h2>Display grid layout</h2>
- * The {@code (2n−1) × (2n−1)} display grid maps to the {@code n×n} number
- * matrix as follows:
+ * <p>The display grid is {@code (2n−1) × (2n−1)} where {@code n = matrixSize}.
+ * Only cells claimed by at least one arm are rendered; all others are blank.
+ *
+ * <p>Display positions:
  * <pre>
- *   (even displayRow, even displayCol)  →  number cell
- *   (even displayRow, odd  displayCol)  →  horizontal: operator symbol or '='
- *   (odd  displayRow, even displayCol)  →  vertical:   operator symbol or '='
- *   (odd  displayRow, odd  displayCol)  →  empty spacer (cross-point)
+ *   (even row, even col)  →  number cell
+ *   (even row, odd  col)  →  horizontal operator or '='
+ *   (odd  row, even col)  →  vertical operator or '='
+ *   (odd  row, odd  col)  →  empty spacer
  * </pre>
- *
- * <h2>Operator and '=' index formula</h2>
- * For a horizontal cell at {@code (even displayRow, odd displayCol)}:
- * <pre>
- *   equationIndex = (displayCol − 1) / 4
- *   isEqualSign   = (displayCol % 4 == 3)
- *
- *   displayCol:  1 → op[eq=0],  3 → '='[eq=0],  5 → op[eq=1],  7 → '='[eq=1], …
- * </pre>
- * The same formula applies vertically with {@code displayRow} in place of
- * {@code displayCol}.
- *
- * <h2>Equation masking</h2>
- * An equation hidden in the {@link EquationMask} renders its operator and
- * '=' sign as blank space. Number cells are always shown because they
- * participate in perpendicular equations.
  */
 public class PuzzlePrinter {
-
-    private static final String BLANK_CELL = " ";
 
     private final PuzzleGrid   grid;
     private final EquationMask mask;
     private final int          matrixSize;
-    private final int          displaySize;   // = 2 * matrixSize - 1
+    private final int          displaySize;
 
-    // ── Construction ──────────────────────────────────────────────────────────
+    /** Precomputed symbol map: display position → character (operator or '='). */
+    private final Map<Long, Character> symbolMap;
+
+    /** Precomputed set of occupied number-cell positions (in matrix coords). */
+    private final boolean[][] occupied;
 
     public PuzzlePrinter(PuzzleGrid grid, EquationMask mask) {
         this.grid        = grid;
         this.mask        = mask;
         this.matrixSize  = grid.config.matrixSize;
         this.displaySize = 2 * matrixSize - 1;
+        this.symbolMap   = new HashMap<>();
+        this.occupied    = new boolean[matrixSize][matrixSize];
+        buildDisplayData();
     }
 
-    // ── Public print methods ──────────────────────────────────────────────────
+    // ── Public print methods ────────────────────────────────────────────────
 
-    /** Prints the fully solved grid with all numbers visible. */
     public void printSolution() {
         printBanner("Solved");
         printGrid(false);
     }
 
-    /** Prints the playable puzzle with all number cells shown as '?'. */
     public void printPuzzle() {
         printBanner("Puzzle  — fill in the ?s");
         printGrid(true);
     }
 
-    /** Prints all equations in human-readable form — useful for debugging. */
     public void printEquations() {
-        System.out.println("  ── Horizontal equations ─────────────────────────");
-        for (int row = 0; row < matrixSize; row++) {
-            for (int equationIndex = 0; equationIndex < grid.config.equationsPerLine; equationIndex++) {
-                int leftColumn   = equationIndex * 2;
-                int rightColumn  = leftColumn + 1;
-                int resultColumn = leftColumn + 2;
-
-                System.out.printf("  H[row=%d][eq=%d]:  %4d  %c  %4d  =  %4d%n",
-                    row, equationIndex,
-                    grid.numbers[row][leftColumn],
-                    grid.horizontalOperators[row][equationIndex].symbol(),
-                    grid.numbers[row][rightColumn],
-                    grid.numbers[row][resultColumn]);
-            }
-        }
-
-        System.out.println("  ── Vertical equations ───────────────────────────");
-        for (int column = 0; column < matrixSize; column++) {
-            for (int equationIndex = 0; equationIndex < grid.config.equationsPerLine; equationIndex++) {
-                int topRow    = equationIndex * 2;
-                int bottomRow = topRow + 1;
-                int resultRow = topRow + 2;
-
-                System.out.printf("  V[col=%d][eq=%d]:  %4d  %c  %4d  =  %4d%n",
-                    column, equationIndex,
-                    grid.numbers[topRow][column],
-                    grid.verticalOperators[column][equationIndex].symbol(),
-                    grid.numbers[bottomRow][column],
-                    grid.numbers[resultRow][column]);
-            }
+        List<EquationArm> arms = grid.shape.arms();
+        System.out.println("  ── Equations ────────────────────────────────────");
+        for (int i = 0; i < arms.size(); i++) {
+            EquationArm arm = arms.get(i);
+            char dir = arm.direction() == ArmDirection.HORIZONTAL ? 'H' : 'V';
+            GridCell a = arm.operandCells().get(0);
+            GridCell b = arm.operandCells().get(1);
+            GridCell r = arm.resultCell();
+            System.out.printf("  [%d] %c %s:  %4d  %c  %4d  =  %4d%n",
+                i, dir, a + "→" + r,
+                grid.getValue(a),
+                arm.operator() != null ? arm.operator().symbol() : '?',
+                grid.getValue(b),
+                grid.getValue(r));
         }
         System.out.println();
     }
 
-    // ── Core rendering ────────────────────────────────────────────────────────
+    // ── Core rendering ──────────────────────────────────────────────────────
 
     private void printGrid(boolean hideNumbers) {
+        // Determine field width from max value
+        int maxVal = 0;
+        for (int r = 0; r < matrixSize; r++)
+            for (int c = 0; c < matrixSize; c++)
+                if (occupied[r][c]) maxVal = Math.max(maxVal, Math.abs(grid.values[r][c]));
+        int numWidth = Math.max(2, String.valueOf(maxVal).length());
+        String numFormat = "%" + (numWidth + 2) + "s";
+
         System.out.println();
-        for (int displayRow = 0; displayRow < displaySize; displayRow++) {
+        for (int dr = 0; dr < displaySize; dr++) {
             System.out.print("    ");
-            for (int displayCol = 0; displayCol < displaySize; displayCol++) {
-                System.out.printf("%5s", tokenAt(displayRow, displayCol, hideNumbers));
+            for (int dc = 0; dc < displaySize; dc++) {
+                boolean rowEven = dr % 2 == 0;
+                boolean colEven = dc % 2 == 0;
+
+                if (rowEven && colEven) {
+                    // Number cell
+                    int mr = dr / 2, mc = dc / 2;
+                    if (occupied[mr][mc]) {
+                        String token = hideNumbers ? "?"
+                            : String.valueOf(grid.values[mr][mc]);
+                        System.out.printf(numFormat, token);
+                    } else {
+                        System.out.printf(numFormat, "");
+                    }
+                } else if (rowEven && !colEven) {
+                    // Horizontal symbol
+                    Character sym = symbolMap.get(key(dr, dc));
+                    if (sym != null) {
+                        System.out.printf(numFormat, String.valueOf(sym));
+                    } else {
+                        System.out.printf(numFormat, "");
+                    }
+                } else if (!rowEven && colEven) {
+                    // Vertical symbol
+                    Character sym = symbolMap.get(key(dr, dc));
+                    if (sym != null) {
+                        System.out.printf(numFormat, String.valueOf(sym));
+                    } else {
+                        System.out.printf(numFormat, "");
+                    }
+                } else {
+                    // Odd-odd spacer
+                    System.out.printf(numFormat, "");
+                }
             }
             System.out.println();
         }
         System.out.println();
     }
 
-    /**
-     * Returns the display token for position ({@code displayRow}, {@code displayCol})
-     * in the {@code (2n−1)×(2n−1)} display grid.
-     */
-    private String tokenAt(int displayRow, int displayCol, boolean hideNumbers) {
-        boolean rowIsEven = displayRow % 2 == 0;
-        boolean colIsEven = displayCol % 2 == 0;
+    // ── Display data pre-computation ────────────────────────────────────────
 
-        if (rowIsEven && colIsEven) {
-            return numberCellToken(displayRow, displayCol, hideNumbers);
+    private void buildDisplayData() {
+        List<EquationArm> arms = grid.shape.arms();
+        for (int i = 0; i < arms.size(); i++) {
+            EquationArm arm = arms.get(i);
+            boolean visible = mask.isArmVisible(i);
+
+            // Mark all cells as occupied
+            for (GridCell cell : arm.allCells()) {
+                occupied[cell.row()][cell.col()] = true;
+            }
+
+            if (!visible) continue;
+
+            // Place operator symbol between operand[0] and operand[1]
+            GridCell a = arm.operandCells().get(0);
+            GridCell b = arm.operandCells().get(1);
+            GridCell r = arm.resultCell();
+            char opSym = arm.operator() != null ? arm.operator().symbol() : '?';
+
+            if (arm.direction() == ArmDirection.HORIZONTAL) {
+                // Operator between a and b: display row = a.row*2, col = a.col*2 + 1
+                symbolMap.put(key(a.row() * 2, a.col() * 2 + 1), opSym);
+                // = between b and r: display row = b.row*2, col = b.col*2 + 1
+                symbolMap.put(key(b.row() * 2, b.col() * 2 + 1), '=');
+            } else {
+                // Operator between a and b: display row = a.row*2 + 1, col = a.col*2
+                symbolMap.put(key(a.row() * 2 + 1, a.col() * 2), opSym);
+                // = between b and r: display row = b.row*2 + 1, col = b.col*2
+                symbolMap.put(key(b.row() * 2 + 1, b.col() * 2), '=');
+            }
         }
-
-        if (rowIsEven) {
-            return horizontalCellToken(displayRow, displayCol);
-        }
-
-        if (colIsEven) {
-            return verticalCellToken(displayRow, displayCol);
-        }
-
-        // Odd displayRow AND odd displayCol — cross-point spacer
-        return "";
     }
 
-    private String numberCellToken(int displayRow, int displayCol, boolean hideNumbers) {
-        if (hideNumbers) {
-            return "?";
-        }
-        int matrixRow    = displayRow / 2;
-        int matrixColumn = displayCol / 2;
-        return String.valueOf(grid.numbers[matrixRow][matrixColumn]);
+    private static long key(int row, int col) {
+        return ((long) row << 32) | (col & 0xFFFFFFFFL);
     }
 
-    private String horizontalCellToken(int displayRow, int displayCol) {
-        int row           = displayRow / 2;
-        int equationIndex = (displayCol - 1) / 4;
-        boolean isEqualSign = displayCol % 4 == 3;
-
-        if (!mask.isVisible(EquationId.Axis.HORIZONTAL, row, equationIndex)) {
-            return BLANK_CELL;
-        }
-
-        if (isEqualSign) {
-            return "=";
-        }
-        return String.valueOf(grid.horizontalOperators[row][equationIndex].symbol());
-    }
-
-    private String verticalCellToken(int displayRow, int displayCol) {
-        int column        = displayCol / 2;
-        int equationIndex = (displayRow - 1) / 4;
-        boolean isEqualSign = displayRow % 4 == 3;
-
-        if (!mask.isVisible(EquationId.Axis.VERTICAL, column, equationIndex)) {
-            return BLANK_CELL;
-        }
-
-        if (isEqualSign) {
-            return "=";
-        }
-        return String.valueOf(grid.verticalOperators[column][equationIndex].symbol());
-    }
-
-    // ── Banner helper ─────────────────────────────────────────────────────────
+    // ── Banner ──────────────────────────────────────────────────────────────
 
     private static void printBanner(String title) {
-        String horizontalRule = "═".repeat(46);
-        System.out.println("\n  ╔" + horizontalRule + "╗");
+        String hr = "═".repeat(46);
+        System.out.println("\n  ╔" + hr + "╗");
         System.out.printf(  "  ║  %-44s  ║%n", "CROSSMATH  —  " + title);
-        System.out.println( "  ╚" + horizontalRule + "╝");
+        System.out.println( "  ╚" + hr + "╝");
     }
 }
