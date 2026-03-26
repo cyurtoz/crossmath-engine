@@ -1,4 +1,4 @@
-package io.crossmath;
+package io.crossmath.engine;
 
 /**
  * Immutable puzzle configuration.

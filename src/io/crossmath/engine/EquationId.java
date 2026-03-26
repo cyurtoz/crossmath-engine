@@ -1,4 +1,4 @@
-package io.crossmath;
+package io.crossmath.engine;
 
 /**
  * Identifies a single equation within the puzzle grid.

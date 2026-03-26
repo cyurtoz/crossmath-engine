@@ -1,4 +1,4 @@
-package io.crossmath;
+package io.crossmath.engine;
 
 /**
  * Fully solved puzzle grid: the number matrix and all operators.

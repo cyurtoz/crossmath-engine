@@ -1,4 +1,4 @@
-package io.crossmath;
+package io.crossmath.engine;
 
 /**
  * Renders a {@link PuzzleGrid} to the console as a formatted 2D display grid.
