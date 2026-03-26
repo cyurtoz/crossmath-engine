@@ -33,10 +33,11 @@ public class OperatorRegistry {
     public OperatorRegistry(PuzzleConfig config, Random random) {
         this.config = config;
         this.random = random;
- 
-        register(new AddOperator());
-        register(new SubtractOperator());
-       
+
+        registerIfAllowed(new AddOperator(), config);
+        registerIfAllowed(new SubtractOperator(), config);
+        registerIfAllowed(new MultiplyOperator(config.maxCellValue), config);
+        registerIfAllowed(new DivideOperator(), config);
     }
 
     // ── Registry mutation ─────────────────────────────────────────────────────
@@ -118,6 +119,12 @@ public class OperatorRegistry {
 
     private void register(Operator operator) {
         operatorMap.put(operator.symbol(), operator);
+    }
+
+    private void registerIfAllowed(Operator operator, PuzzleConfig config) {
+        if (config.allowedOperators == null || config.allowedOperators.contains(operator.symbol())) {
+            register(operator);
+        }
     }
 
     private List<Operator> shuffledOperators() {
