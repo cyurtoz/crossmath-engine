@@ -24,11 +24,12 @@ public class CrossMathMain {
 
     public static void main(String[] args) {
 
-    try {
-        run(args);
-    } catch (Exception e) {
-        main(args);
-    }
+        try {
+            run(args);
+        } catch (Exception e) {
+            System.err.println("Generation failed: " + e.getMessage());
+            System.exit(1);
+        }
     }
 
     static void run(String[] args) {
@@ -38,12 +39,13 @@ public class CrossMathMain {
         int  matrixSize        = args.length > 3 ? Integer.parseInt(args[3])  : 5;
         int  minUsagePerOp     = args.length > 4 ? Integer.parseInt(args[4])  : 2;
         int  numBrackets       = args.length > 5 ? Integer.parseInt(args[5])  : 4;
+        boolean useShape       = args.length > 6 && "shape".equalsIgnoreCase(args[6]);
 
         // ── Configuration ─────────────────────────────────────────────────────
         PuzzleConfig config = PuzzleConfig.builder()
             .matrixSize(matrixSize)
             .minCellValue(1)
-            .maxCellValue(100)
+            .maxCellValue(maxCellValue)
             .maxGenerationAttempts(10000)
             .minUsagePerOperator(minUsagePerOp)
             .numBrackets(numBrackets)
@@ -67,7 +69,16 @@ public class CrossMathMain {
 
         // ── Generate ───────────────────────────────────────────────────────────
         CrossMathGenerator generator = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid solvedGrid = generator.generate();
+        PuzzleGrid solvedGrid;
+
+        if (useShape) {
+            ShapeGenerator shapeGen = new ShapeGenerator(config, random);
+            PuzzleShape shape = shapeGen.generate();
+            System.out.println("  " + shape);
+            solvedGrid = generator.generate(shape);
+        } else {
+            solvedGrid = generator.generate();
+        }
         printHeader(seed, equationsToHide, maxCellValue, matrixSize, minUsagePerOp, numBrackets);
 
         System.out.println("  " + config);

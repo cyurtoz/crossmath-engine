@@ -91,6 +91,18 @@ public final class PuzzleConfig {
     public final int maxChainSafeOperand;
 
     /**
+     * Maximum number of free operand cells per arm in shape-based generation.
+     * Derived: {@code (matrixSize - 1) / 2}.
+     */
+    public final int maxArmFreeOperands;
+
+    /**
+     * Target number of equations the shape generator should produce.
+     * Derived: {@code equationsPerLine × matrixSize}.
+     */
+    public final int targetEquationCount;
+
+    /**
      * Number of equal-width brackets used for operand selection.
      *
      * <p>The range {@code [minCellValue, maxChainSafeOperand]} is divided into
@@ -128,6 +140,8 @@ public final class PuzzleConfig {
 
         int chainLength             = (builder.matrixSize - 1) / 2 + 1;  // equationsPerLine + 1
         this.maxChainSafeOperand    = Math.max(1, builder.maxCellValue / (2 * chainLength));
+        this.maxArmFreeOperands     = (builder.matrixSize - 1) / 2;
+        this.targetEquationCount    = this.equationsPerLine * builder.matrixSize;
         this.numBrackets            = Math.max(1, builder.numBrackets);
     }
 

@@ -36,7 +36,8 @@ public class OperatorRegistry {
  
         register(new AddOperator());
         register(new SubtractOperator());
-       
+        register(new MultiplyOperator(config.maxCellValue));
+        register(new DivideOperator());
     }
 
     // ── Registry mutation ─────────────────────────────────────────────────────

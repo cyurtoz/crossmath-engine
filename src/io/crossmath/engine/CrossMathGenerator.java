@@ -4,10 +4,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Generates fully solved CrossMath puzzle grids.
@@ -53,6 +55,26 @@ public class CrossMathGenerator {
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
+
+    public PuzzleGrid generate(PuzzleShape shape) {
+        for (int attempt = 1; attempt <= config.maxGenerationAttempts; attempt++) {
+            PuzzleGrid candidate = tryFillShape(shape);
+            if (candidate == null) continue;
+
+            if (!candidate.verify()) continue;
+
+            Map<Character, Integer> usage = countShapeOperatorUsage(candidate, shape);
+            boolean meetsMin = config.minUsagePerOperator <= 0 ||
+                    usage.values().stream().allMatch(c -> c >= config.minUsagePerOperator);
+            if (!meetsMin) {
+                continue;
+            }
+            System.out.printf("[Generator] Shape solved on attempt %d. Usage: %s%n", attempt, usage);
+            return candidate;
+        }
+        throw new IllegalStateException(
+                "Shape generation failed after " + config.maxGenerationAttempts + " attempts.");
+    }
 
     public PuzzleGrid generate() {
         for (int attempt = 1; attempt <= config.maxGenerationAttempts; attempt++) {
@@ -455,5 +477,108 @@ public class CrossMathGenerator {
         if (!grid.verify()) {
             throw new IllegalStateException("BUG: grid failed verification.");
         }
+    }
+
+    // ── Shape-based generation ───────────────────────────────────────────────
+
+    private PuzzleGrid tryFillShape(PuzzleShape shape) {
+        PuzzleGrid grid = new PuzzleGrid(config, shape);
+        Map<Character, Integer> usageCounts = initialUsageCounts();
+
+        // Phase 1: seed all intersection cells with values
+        List<GridCell> intersections = new ArrayList<>(shape.intersections());
+        List<Operator> operators = registry.all();
+
+        for (int i = 0; i < intersections.size(); i++) {
+            GridCell cell = intersections.get(i);
+            Operator targetOp = operators.get(i % operators.size());
+
+            int value = picker.next();
+            int safetyLimit = 100;
+            while (safetyLimit-- > 0) {
+                List<Integer> validRights = targetOp.validRightOperands(value, config, random);
+                if (!validRights.isEmpty()) break;
+                value = picker.next();
+            }
+            grid.setCellValue(cell, value);
+        }
+
+        // Phase 2: fill each arm independently
+        for (EquationArm arm : shape.arms()) {
+            if (!fillArm(grid, arm, usageCounts)) {
+                return null;
+            }
+        }
+
+        return grid;
+    }
+
+    private boolean fillArm(PuzzleGrid grid, EquationArm arm,
+                            Map<Character, Integer> usageCounts) {
+        List<GridCell> operands = arm.operandCells();
+        List<Operator> armOps = new ArrayList<>();
+
+        int running = grid.getCellValue(operands.get(0));
+
+        for (int i = 1; i < operands.size(); i++) {
+            GridCell cell = operands.get(i);
+            boolean hasValue = grid.hasCellValue(cell);
+
+            if (hasValue) {
+                int fixedValue = grid.getCellValue(cell);
+                Operator op = findOperatorForPair(running, fixedValue, usageCounts);
+                if (op == null) return false;
+                int result = op.apply(running, fixedValue, config);
+                if (result == Integer.MIN_VALUE) return false;
+                armOps.add(op);
+                running = result;
+            } else {
+                boolean filled = false;
+                for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+                    List<Integer> rights = op.validRightOperands(running, config, random);
+                    for (int rightValue : rights) {
+                        int result = op.apply(running, rightValue, config);
+                        if (result != Integer.MIN_VALUE) {
+                            grid.setCellValue(cell, rightValue);
+                            armOps.add(op);
+                            running = result;
+                            filled = true;
+                            break;
+                        }
+                    }
+                    if (filled) break;
+                }
+                if (!filled) return false;
+            }
+        }
+
+        grid.setCellValue(arm.resultCell(), running);
+        grid.setArmOperators(arm, armOps);
+
+        for (Operator op : armOps) {
+            usageCounts.merge(op.symbol(), 1, Integer::sum);
+        }
+        return true;
+    }
+
+    private Operator findOperatorForPair(int left, int right,
+                                          Map<Character, Integer> usageCounts) {
+        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+            if (op.apply(left, right, config) != Integer.MIN_VALUE) {
+                return op;
+            }
+        }
+        return null;
+    }
+
+    private Map<Character, Integer> countShapeOperatorUsage(PuzzleGrid grid, PuzzleShape shape) {
+        Map<Character, Integer> counts = new LinkedHashMap<>();
+        for (Operator op : registry.all()) counts.put(op.symbol(), 0);
+        for (EquationArm arm : shape.arms()) {
+            for (Operator op : grid.getArmOperators(arm)) {
+                counts.merge(op.symbol(), 1, Integer::sum);
+            }
+        }
+        return counts;
     }
 }
