@@ -62,6 +62,7 @@ public class CrossMathGenerator {
             if (candidate == null) continue;
 
             if (!candidate.verify()) continue;
+            if (hasDuplicateEquationsShape(candidate, shape)) continue;
 
             Map<Character, Integer> usage = countShapeOperatorUsage(candidate, shape);
             boolean meetsMin = config.minUsagePerOperator <= 0 ||
@@ -82,6 +83,7 @@ public class CrossMathGenerator {
             if (candidate == null) {
                 continue;
             }
+            if (hasDuplicateEquationsFixedGrid(candidate)) continue;
             OperatorUsageReport usage = countOperatorUsage(candidate);
             if (!usage.meetsMinimum(config.minUsagePerOperator)) {
                 System.out.printf(
@@ -569,6 +571,53 @@ public class CrossMathGenerator {
             }
         }
         return null;
+    }
+
+    // ── Duplicate equation detection ──────────────────────────────────────────
+
+    private record EquationTriple(int left, char op, int right) {}
+
+    private static EquationTriple normalizeTriple(int left, char op, int right) {
+        if (op == '+' || op == '*') {
+            return new EquationTriple(Math.min(left, right), op, Math.max(left, right));
+        }
+        return new EquationTriple(left, op, right);
+    }
+
+    private boolean hasDuplicateEquationsFixedGrid(PuzzleGrid grid) {
+        Set<EquationTriple> seen = new HashSet<>();
+        for (int row = 0; row < config.matrixSize; row++) {
+            for (int eq = 0; eq < config.equationsPerLine; eq++) {
+                int left  = grid.numbers[row][eq * 2];
+                int right = grid.numbers[row][eq * 2 + 1];
+                char sym  = grid.horizontalOperators[row][eq].symbol();
+                if (!seen.add(normalizeTriple(left, sym, right))) return true;
+            }
+        }
+        for (int col = 0; col < config.matrixSize; col++) {
+            for (int eq = 0; eq < config.equationsPerLine; eq++) {
+                int top    = grid.numbers[eq * 2][col];
+                int bottom = grid.numbers[eq * 2 + 1][col];
+                char sym   = grid.verticalOperators[col][eq].symbol();
+                if (!seen.add(normalizeTriple(top, sym, bottom))) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasDuplicateEquationsShape(PuzzleGrid grid, PuzzleShape shape) {
+        Set<EquationTriple> seen = new HashSet<>();
+        for (EquationArm arm : shape.arms()) {
+            List<GridCell> operands = arm.operandCells();
+            List<Operator> ops = grid.getArmOperators(arm);
+            for (int i = 0; i < ops.size(); i++) {
+                int left  = grid.getCellValue(operands.get(i));
+                int right = grid.getCellValue(operands.get(i + 1));
+                char sym  = ops.get(i).symbol();
+                if (!seen.add(normalizeTriple(left, sym, right))) return true;
+            }
+        }
+        return false;
     }
 
     private Map<Character, Integer> countShapeOperatorUsage(PuzzleGrid grid, PuzzleShape shape) {
