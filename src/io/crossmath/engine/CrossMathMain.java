@@ -93,10 +93,18 @@ public class CrossMathMain {
         solutionPrinter.printEquations();
 
         // ── Print puzzle (some equations hidden, all number cells as '?') ────────
-        EquationMask puzzleMask = EquationMask.random(config, equationsToHide, random);
-        System.out.printf("  Hidden equations (%d): %s%n%n",
-            puzzleMask.hiddenCount(),
-            puzzleMask.hiddenSet());
+        EquationMask puzzleMask;
+        if (useShape) {
+            puzzleMask = EquationMask.randomForShape(solvedGrid.shape(), equationsToHide, random);
+            System.out.printf("  Hidden arms (%d): %s%n%n",
+                puzzleMask.hiddenCount(),
+                puzzleMask.hiddenArmSet());
+        } else {
+            puzzleMask = EquationMask.random(config, equationsToHide, random);
+            System.out.printf("  Hidden equations (%d): %s%n%n",
+                puzzleMask.hiddenCount(),
+                puzzleMask.hiddenSet());
+        }
 
         PuzzlePrinter puzzlePrinter = new PuzzlePrinter(solvedGrid, puzzleMask);
         puzzlePrinter.printPuzzle();

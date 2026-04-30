@@ -28,6 +28,7 @@ import java.util.Set;
 public class EquationMask {
 
     private final Set<EquationId> hiddenEquations = new HashSet<>();
+    private final Set<Integer> hiddenArmIndices = new HashSet<>();
 
     // ── Mutation ──────────────────────────────────────────────────────────────
 
@@ -39,12 +40,21 @@ public class EquationMask {
         hiddenEquations.add(new EquationId(axis, lineIndex, equationIndex));
     }
 
+    public void hideArm(int armIndex) {
+        hiddenArmIndices.add(armIndex);
+    }
+
     public void show(EquationId equationId) {
         hiddenEquations.remove(equationId);
     }
 
+    public void showArm(int armIndex) {
+        hiddenArmIndices.remove(armIndex);
+    }
+
     public void showAll() {
         hiddenEquations.clear();
+        hiddenArmIndices.clear();
     }
 
     // ── Queries ───────────────────────────────────────────────────────────────
@@ -57,12 +67,20 @@ public class EquationMask {
         return isVisible(new EquationId(axis, lineIndex, equationIndex));
     }
 
+    public boolean isArmVisible(int armIndex) {
+        return !hiddenArmIndices.contains(armIndex);
+    }
+
     public int hiddenCount() {
-        return hiddenEquations.size();
+        return hiddenEquations.size() + hiddenArmIndices.size();
     }
 
     public Set<EquationId> hiddenSet() {
         return Collections.unmodifiableSet(hiddenEquations);
+    }
+
+    public Set<Integer> hiddenArmSet() {
+        return Collections.unmodifiableSet(hiddenArmIndices);
     }
 
     // ── Factory methods ───────────────────────────────────────────────────────
@@ -74,7 +92,7 @@ public class EquationMask {
 
     /**
      * Randomly hides {@code countToHide} equations chosen without replacement.
-     * Each call with a different {@code random} state produces a different shape.
+     * For fixed-grid mode.
      */
     public static EquationMask random(PuzzleConfig config, int countToHide, Random random) {
         EquationMask mask = new EquationMask();
@@ -84,6 +102,24 @@ public class EquationMask {
         int limit = Math.min(countToHide, allEquationIds.size());
         for (int i = 0; i < limit; i++) {
             mask.hide(allEquationIds.get(i));
+        }
+        return mask;
+    }
+
+    /**
+     * Randomly hides {@code countToHide} arms chosen without replacement.
+     * For shape-based mode.
+     */
+    public static EquationMask randomForShape(PuzzleShape shape, int countToHide, Random random) {
+        EquationMask mask = new EquationMask();
+        int armCount = shape.arms().size();
+        List<Integer> indices = new ArrayList<>(armCount);
+        for (int i = 0; i < armCount; i++) indices.add(i);
+        Collections.shuffle(indices, random);
+
+        int limit = Math.min(countToHide, armCount);
+        for (int i = 0; i < limit; i++) {
+            mask.hideArm(indices.get(i));
         }
         return mask;
     }

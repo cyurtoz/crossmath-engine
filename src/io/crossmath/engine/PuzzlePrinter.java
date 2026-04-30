@@ -180,6 +180,7 @@ public class PuzzlePrinter {
 
         int armIndex = 0;
         for (EquationArm arm : shape.arms()) {
+            boolean visible = mask.isArmVisible(armIndex);
             List<Operator> ops = grid.getArmOperators(arm);
             List<GridCell> operands = arm.operandCells();
 
@@ -191,7 +192,8 @@ public class PuzzlePrinter {
 
                 if (displaySymRow >= 0 && displaySymRow < displaySize
                         && displaySymCol >= 0 && displaySymCol < displaySize) {
-                    display[displaySymRow][displaySymCol] = String.valueOf(ops.get(i).symbol());
+                    display[displaySymRow][displaySymCol] =
+                            visible ? String.valueOf(ops.get(i).symbol()) : BLANK_CELL;
                 }
             }
 
@@ -202,7 +204,7 @@ public class PuzzlePrinter {
 
             if (eqRow >= 0 && eqRow < displaySize
                     && eqCol >= 0 && eqCol < displaySize) {
-                display[eqRow][eqCol] = "=";
+                display[eqRow][eqCol] = visible ? "=" : BLANK_CELL;
             }
 
             armIndex++;
