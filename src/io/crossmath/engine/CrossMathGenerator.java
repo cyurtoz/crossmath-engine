@@ -57,6 +57,18 @@ public class CrossMathGenerator {
     // ── Public API ────────────────────────────────────────────────────────────
 
     public PuzzleGrid generate(PuzzleShape shape) {
+        int totalOperatorSlots = shape.arms().stream()
+                .mapToInt(arm -> arm.operandCount() - 1)
+                .sum();
+        int operatorCount = registry.size();
+        final int effectiveMinUsage;
+        if (config.minUsagePerOperator > 0 && operatorCount > 0) {
+            int maxPossiblePerOp = totalOperatorSlots / operatorCount;
+            effectiveMinUsage = Math.min(config.minUsagePerOperator, maxPossiblePerOp);
+        } else {
+            effectiveMinUsage = config.minUsagePerOperator;
+        }
+
         for (int attempt = 1; attempt <= config.maxGenerationAttempts; attempt++) {
             PuzzleGrid candidate = tryFillShape(shape);
             if (candidate == null) continue;
@@ -65,8 +77,8 @@ public class CrossMathGenerator {
             if (hasDuplicateEquationsShape(candidate, shape)) continue;
 
             Map<Character, Integer> usage = countShapeOperatorUsage(candidate, shape);
-            boolean meetsMin = config.minUsagePerOperator <= 0 ||
-                    usage.values().stream().allMatch(c -> c >= config.minUsagePerOperator);
+            boolean meetsMin = effectiveMinUsage <= 0 ||
+                    usage.values().stream().allMatch(c -> c >= effectiveMinUsage);
             if (!meetsMin) {
                 continue;
             }

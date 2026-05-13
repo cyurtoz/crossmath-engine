@@ -21,17 +21,20 @@ import java.util.Set;
  *   <li>While queue not empty and {@code armCount < targetEquationCount}:
  *     <ul>
  *       <li>Pop a cell.</li>
- *       <li>Try all 4 growth directions (left, right, up, down) in shuffled order.</li>
+ *       <li>Try HORIZONTAL and VERTICAL arms in shuffled order.</li>
  *       <li>For each grown arm, randomly promote free operand cells to
- *           intersections at ~45% probability and add them to the queue.</li>
+ *           intersections at ~55% probability and add them to the queue.</li>
  *     </ul>
  *   </li>
+ *   <li>If the queue empties early, rescan existing intersections for untried
+ *       growth directions and promote eligible free operands to restart growth.</li>
  *   <li>Return {@link PuzzleShape}.</li>
  * </ol>
  */
 public class ShapeGenerator {
 
-    private static final double PROMOTION_PROBABILITY = 0.45;
+    private static final double PROMOTION_PROBABILITY = 0.55;
+    private static final int MAX_RESCAN_ROUNDS = 3;
 
     private final PuzzleConfig config;
     private final Random random;
@@ -46,6 +49,7 @@ public class ShapeGenerator {
         Map<GridCell, CellRole> cellRoles = new LinkedHashMap<>();
         Set<GridCell> intersections = new LinkedHashSet<>();
         List<EquationArm> arms = new ArrayList<>();
+        Set<GridCell> fullyExplored = new LinkedHashSet<>();
 
         int centerBias = matrixSize / 4;
         GridCell seed = new GridCell(
@@ -57,7 +61,18 @@ public class ShapeGenerator {
         Deque<GridCell> queue = new ArrayDeque<>();
         queue.add(seed);
 
-        while (!queue.isEmpty() && arms.size() < config.targetEquationCount) {
+        int rescanRounds = 0;
+
+        while (arms.size() < config.targetEquationCount) {
+            if (queue.isEmpty()) {
+                if (rescanRounds >= MAX_RESCAN_ROUNDS) break;
+                rescanRounds++;
+                if (!rescanForGrowth(cellRoles, intersections, arms, queue, fullyExplored, matrixSize)) {
+                    break;
+                }
+                continue;
+            }
+
             GridCell source = queue.poll();
 
             List<int[]> directions = new ArrayList<>();
@@ -67,6 +82,7 @@ public class ShapeGenerator {
             directions.add(new int[]{-1, 0});  // up
             Collections.shuffle(directions, random);
 
+            boolean grewAny = false;
             for (int[] dir : directions) {
                 if (arms.size() >= config.targetEquationCount) break;
 
@@ -76,12 +92,71 @@ public class ShapeGenerator {
 
                 arms.add(arm);
                 applyArm(arm, cellRoles, intersections, queue);
+                grewAny = true;
+            }
+            if (!grewAny) {
+                fullyExplored.add(source);
             }
         }
 
         ensureIntersectionConsistency(cellRoles, intersections, arms);
 
         return new PuzzleShape(arms, cellRoles, intersections, matrixSize);
+    }
+
+    private boolean rescanForGrowth(Map<GridCell, CellRole> cellRoles,
+                                     Set<GridCell> intersections,
+                                     List<EquationArm> arms,
+                                     Deque<GridCell> queue,
+                                     Set<GridCell> fullyExplored,
+                                     int matrixSize) {
+        // First: try unexplored intersections
+        List<GridCell> candidates = new ArrayList<>();
+        for (GridCell cell : intersections) {
+            if (!fullyExplored.contains(cell) && canGrowAnyDirection(cell, cellRoles, matrixSize)) {
+                candidates.add(cell);
+            }
+        }
+
+        if (!candidates.isEmpty()) {
+            Collections.shuffle(candidates, random);
+            queue.addAll(candidates);
+            return true;
+        }
+
+        // Second: promote free operands near empty space to intersections
+        List<GridCell> promotable = new ArrayList<>();
+        for (var entry : cellRoles.entrySet()) {
+            if (entry.getValue() == CellRole.FREE_OPERAND
+                    && canGrowAnyDirection(entry.getKey(), cellRoles, matrixSize)) {
+                promotable.add(entry.getKey());
+            }
+        }
+
+        if (!promotable.isEmpty()) {
+            Collections.shuffle(promotable, random);
+            int limit = Math.min(promotable.size(), Math.max(2, (config.targetEquationCount - arms.size()) / 2));
+            for (int i = 0; i < limit; i++) {
+                GridCell cell = promotable.get(i);
+                cellRoles.put(cell, CellRole.INTERSECTION);
+                intersections.add(cell);
+                queue.add(cell);
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean canGrowAnyDirection(GridCell cell, Map<GridCell, CellRole> cellRoles, int matrixSize) {
+        int[][] dirs = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+        for (int[] dir : dirs) {
+            ArmDirection armDir = dir[0] == 0 ? ArmDirection.HORIZONTAL : ArmDirection.VERTICAL;
+            if (tryGrowArm(cell, dir[0], dir[1], armDir, cellRoles, matrixSize) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private EquationArm tryGrowArm(GridCell source, int dr, int dc,

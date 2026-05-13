@@ -111,8 +111,14 @@ public class EquationMask {
      * For shape-based mode.
      */
     public static EquationMask randomForShape(PuzzleShape shape, int countToHide, Random random) {
+        return randomForArms(shape.arms().size(), countToHide, random);
+    }
+
+    /**
+     * Randomly hides {@code countToHide} arms from {@code armCount} total.
+     */
+    public static EquationMask randomForArms(int armCount, int countToHide, Random random) {
         EquationMask mask = new EquationMask();
-        int armCount = shape.arms().size();
         List<Integer> indices = new ArrayList<>(armCount);
         for (int i = 0; i < armCount; i++) indices.add(i);
         Collections.shuffle(indices, random);
