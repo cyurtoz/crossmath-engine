@@ -82,7 +82,7 @@ public class CrossMathGenerator {
             if (!meetsMin) {
                 continue;
             }
-            System.out.printf("[Generator] Shape solved on attempt %d. Usage: %s%n", attempt, usage);
+            System.err.printf("[Generator] Shape solved on attempt %d. Usage: %s%n", attempt, usage);
             return candidate;
         }
         throw new IllegalStateException(
@@ -98,12 +98,12 @@ public class CrossMathGenerator {
             if (hasDuplicateEquationsFixedGrid(candidate)) continue;
             OperatorUsageReport usage = countOperatorUsage(candidate);
             if (!usage.meetsMinimum(config.minUsagePerOperator)) {
-                System.out.printf(
+                System.err.printf(
                     "[Generator] Attempt %d discarded — usage below minimum: %s%n",
                     attempt, usage.summary());
                 continue;
             }
-            System.out.printf("[Generator] Solved on attempt %d. Usage: %s%n",
+            System.err.printf("[Generator] Solved on attempt %d. Usage: %s%n",
                 attempt, usage.summary());
             assertVerified(candidate);
             return candidate;

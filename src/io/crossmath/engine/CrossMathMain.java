@@ -10,12 +10,17 @@ import java.util.Random;
  *   javac -d out src/io/crossmath/engine/*.java
  *   java -cp out io.crossmath.engine.CrossMathMain [seed] [equationsToHide] [maxCellValue] [matrixSize] [minUsagePerOperator] [numBrackets] [shape]
  *   java -cp out io.crossmath.engine.CrossMathMain --level LEVEL [seed] [shape]
+ *   java -cp out io.crossmath.engine.CrossMathMain --json --level LEVEL [seed] [shape]
  *
  *   Level mode examples:
  *     java ... CrossMathMain --level 0               # grade 1 beginner (addition only, 0-10)
  *     java ... CrossMathMain --level 2 42            # grade 2 with fixed seed
  *     java ... CrossMathMain --level 4 42 shape      # grade 4, shape mode
  *     java ... CrossMathMain --level 6 99            # advanced (all operators, 0-500)
+ *
+ *   JSON output:
+ *     java ... CrossMathMain --json --level 3 42     # outputs JSON for frontend
+ *     java ... CrossMathMain --json 42 4 100 5 2 4   # manual mode JSON
  *
  *   Manual mode examples:
  *     java ... CrossMathMain                          # random seed, defaults
@@ -36,6 +41,12 @@ public class CrossMathMain {
     }
 
     static void run(String[] args) {
+        if (args.length >= 1 && "--json".equals(args[0])) {
+            String[] rest = new String[args.length - 1];
+            System.arraycopy(args, 1, rest, 0, rest.length);
+            runJson(rest);
+            return;
+        }
         if (args.length >= 2 && "--level".equals(args[0])) {
             runWithLevel(args);
             return;
@@ -163,6 +174,80 @@ public class CrossMathMain {
     }
 
      
+
+    static void runJson(String[] args) {
+        DifficultyLevel level = null;
+        long seed;
+        boolean useShape = false;
+        PuzzleConfig config;
+        OperatorRegistry registry;
+        int equationsToHide = 4;
+
+        if (args.length >= 2 && "--level".equals(args[0])) {
+            level = DifficultyLevel.parse(args[1]);
+            seed = args.length > 2 ? Long.parseLong(args[2]) : System.currentTimeMillis();
+            useShape = args.length > 3 && "shape".equalsIgnoreCase(args[3]);
+
+            Random random = new Random(seed);
+            config = level.buildConfig();
+            registry = new OperatorRegistry(config, random);
+            level.configureRegistry(registry);
+
+            CrossMathGenerator generator = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid solvedGrid;
+            int armCount = 0;
+
+            if (useShape) {
+                ShapeGenerator shapeGen = new ShapeGenerator(config, random);
+                PuzzleShape shape = shapeGen.generate();
+                solvedGrid = generator.generate(shape);
+                armCount = shape.armCount();
+            } else {
+                solvedGrid = generator.generate();
+            }
+
+            EquationMask puzzleMask = level.buildMask(config, armCount, random);
+            PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
+            System.out.println(exporter.exportJson());
+        } else {
+            seed = args.length > 0 ? Long.parseLong(args[0]) : System.currentTimeMillis();
+            equationsToHide = args.length > 1 ? Integer.parseInt(args[1]) : 4;
+            int maxCellValue = args.length > 2 ? Integer.parseInt(args[2]) : 299;
+            int matrixSize = args.length > 3 ? Integer.parseInt(args[3]) : 5;
+            int minUsagePerOp = args.length > 4 ? Integer.parseInt(args[4]) : 2;
+            int numBrackets = args.length > 5 ? Integer.parseInt(args[5]) : 4;
+            useShape = args.length > 6 && "shape".equalsIgnoreCase(args[6]);
+
+            config = PuzzleConfig.builder()
+                .matrixSize(matrixSize)
+                .minCellValue(1)
+                .maxCellValue(maxCellValue)
+                .maxGenerationAttempts(10000)
+                .minUsagePerOperator(minUsagePerOp)
+                .numBrackets(numBrackets)
+                .build();
+
+            Random random = new Random(seed);
+            registry = new OperatorRegistry(config, random);
+
+            CrossMathGenerator generator = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid solvedGrid;
+
+            if (useShape) {
+                ShapeGenerator shapeGen = new ShapeGenerator(config, random);
+                PuzzleShape shape = shapeGen.generate();
+                solvedGrid = generator.generate(shape);
+                EquationMask puzzleMask = EquationMask.randomForShape(solvedGrid.shape(), equationsToHide, random);
+                PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
+                System.out.println(exporter.exportJson());
+            } else {
+                solvedGrid = generator.generate();
+                EquationMask puzzleMask = EquationMask.random(config, equationsToHide, random);
+                PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
+                System.out.println(exporter.exportJson());
+            }
+        }
+    }
 
     private static void printHeader(long seed, int equationsToHide, int maxCellValue,
                                     int matrixSize, int minUsagePerOp, int numBrackets) {
