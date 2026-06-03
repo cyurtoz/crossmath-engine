@@ -264,6 +264,7 @@ public class PuzzleJsonExporter {
 
     private List<int[]> collectHiddenCells() {
         List<int[]> hidden = new ArrayList<>();
+        boolean includeResults = level == null || level.hideResults;
 
         if (grid.isShapeMode()) {
             PuzzleShape shape = grid.shape();
@@ -274,7 +275,9 @@ public class PuzzleJsonExporter {
                     for (GridCell cell : arm.operandCells()) {
                         hiddenSet.add(cell);
                     }
-                    hiddenSet.add(arm.resultCell());
+                    if (includeResults) {
+                        hiddenSet.add(arm.resultCell());
+                    }
                 }
                 armIndex++;
             }
@@ -284,7 +287,7 @@ public class PuzzleJsonExporter {
         } else {
             Set<String> hiddenSet = new java.util.LinkedHashSet<>();
             for (EquationId id : mask.hiddenSet()) {
-                addCellsForEquation(id, hiddenSet);
+                addCellsForEquation(id, hiddenSet, includeResults);
             }
             for (String key : hiddenSet) {
                 String[] parts = key.split(",");
@@ -294,19 +297,23 @@ public class PuzzleJsonExporter {
         return hidden;
     }
 
-    private void addCellsForEquation(EquationId id, Set<String> cells) {
+    private void addCellsForEquation(EquationId id, Set<String> cells, boolean includeResult) {
         if (id.axis() == EquationId.Axis.HORIZONTAL) {
             int row = id.lineIndex();
             int leftCol = id.equationIndex() * 2;
             cells.add(row + "," + leftCol);
             cells.add(row + "," + (leftCol + 1));
-            cells.add(row + "," + (leftCol + 2));
+            if (includeResult) {
+                cells.add(row + "," + (leftCol + 2));
+            }
         } else {
             int col = id.lineIndex();
             int topRow = id.equationIndex() * 2;
             cells.add(topRow + "," + col);
             cells.add((topRow + 1) + "," + col);
-            cells.add((topRow + 2) + "," + col);
+            if (includeResult) {
+                cells.add((topRow + 2) + "," + col);
+            }
         }
     }
 

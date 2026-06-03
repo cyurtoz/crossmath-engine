@@ -79,7 +79,7 @@ public enum DifficultyLevel {
         double visibleFraction = minVisible + random.nextDouble() * (maxVisible - minVisible);
         int totalEquations = armCount > 0 ? armCount
                 : 2 * config.matrixSize * config.equationsPerLine;
-        int countToHide = Math.max(0, totalEquations - (int) Math.round(totalEquations * visibleFraction));
+        int countToHide = Math.max(1, totalEquations - (int) Math.round(totalEquations * visibleFraction));
         countToHide = Math.min(countToHide, totalEquations - 1);
 
         if (armCount > 0) {
