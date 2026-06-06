@@ -92,9 +92,8 @@ public class CrossMathMain {
 
         if (useShape) {
             ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-            PuzzleShape shape = shapeGen.generate();
-            System.out.println("  " + shape);
-            solvedGrid = generator.generate(shape);
+            solvedGrid = generator.generate(shapeGen);
+            System.out.println("  " + solvedGrid.shape());
         } else {
             solvedGrid = generator.generate();
         }
@@ -149,10 +148,9 @@ public class CrossMathMain {
 
         if (useShape) {
             ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-            PuzzleShape shape = shapeGen.generate();
-            System.out.println("  " + shape);
-            solvedGrid = generator.generate(shape);
-            armCount = shape.armCount();
+            solvedGrid = generator.generate(shapeGen);
+            armCount = solvedGrid.shape().armCount();
+            System.out.println("  " + solvedGrid.shape());
         } else {
             solvedGrid = generator.generate();
         }
@@ -199,9 +197,8 @@ public class CrossMathMain {
 
             if (useShape) {
                 ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-                PuzzleShape shape = shapeGen.generate();
-                solvedGrid = generator.generate(shape);
-                armCount = shape.armCount();
+                solvedGrid = generator.generate(shapeGen);
+                armCount = solvedGrid.shape().armCount();
             } else {
                 solvedGrid = generator.generate();
             }
@@ -235,8 +232,7 @@ public class CrossMathMain {
 
             if (useShape) {
                 ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-                PuzzleShape shape = shapeGen.generate();
-                solvedGrid = generator.generate(shape);
+                solvedGrid = generator.generate(shapeGen);
                 EquationMask puzzleMask = EquationMask.randomForShape(solvedGrid.shape(), equationsToHide, random);
                 PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
                 System.out.println(exporter.exportJson());

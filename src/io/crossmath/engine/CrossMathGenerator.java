@@ -57,33 +57,51 @@ public class CrossMathGenerator {
     // ── Public API ────────────────────────────────────────────────────────────
 
     public PuzzleGrid generate(PuzzleShape shape) {
-        int totalOperatorSlots = shape.arms().stream()
-                .mapToInt(arm -> arm.operandCount() - 1)
-                .sum();
-        int operatorCount = registry.size();
-        final int effectiveMinUsage;
-        if (config.minUsagePerOperator > 0 && operatorCount > 0) {
-            int maxPossiblePerOp = totalOperatorSlots / operatorCount;
-            effectiveMinUsage = Math.min(config.minUsagePerOperator, maxPossiblePerOp);
-        } else {
-            effectiveMinUsage = config.minUsagePerOperator;
-        }
+        return generateWithShape(shape, null);
+    }
 
-        for (int attempt = 1; attempt <= config.maxGenerationAttempts; attempt++) {
-            PuzzleGrid candidate = tryFillShape(shape);
-            if (candidate == null) continue;
+    public PuzzleGrid generate(ShapeGenerator shapeGen) {
+        return generateWithShape(null, shapeGen);
+    }
 
-            if (!candidate.verify()) continue;
-            if (hasDuplicateEquationsShape(candidate, shape)) continue;
+    private PuzzleGrid generateWithShape(PuzzleShape fixedShape, ShapeGenerator shapeGen) {
+        int shapesPerRound = 50;
+        int fillsPerShape = Math.max(1, config.maxGenerationAttempts / shapesPerRound);
 
-            Map<Character, Integer> usage = countShapeOperatorUsage(candidate, shape);
-            boolean meetsMin = effectiveMinUsage <= 0 ||
-                    usage.values().stream().allMatch(c -> c >= effectiveMinUsage);
-            if (!meetsMin) {
-                continue;
+        for (int shapeAttempt = 0; shapeAttempt < shapesPerRound; shapeAttempt++) {
+            PuzzleShape shape = fixedShape != null ? fixedShape : shapeGen.generate();
+
+            int totalOperatorSlots = shape.arms().stream()
+                    .mapToInt(arm -> arm.operandCount() - 1)
+                    .sum();
+            int operatorCount = registry.size();
+            final int effectiveMinUsage;
+            if (config.minUsagePerOperator > 0 && operatorCount > 0) {
+                int maxPossiblePerOp = totalOperatorSlots / operatorCount;
+                effectiveMinUsage = Math.min(config.minUsagePerOperator, maxPossiblePerOp);
+            } else {
+                effectiveMinUsage = config.minUsagePerOperator;
             }
-            System.err.printf("[Generator] Shape solved on attempt %d. Usage: %s%n", attempt, usage);
-            return candidate;
+
+            for (int attempt = 1; attempt <= fillsPerShape; attempt++) {
+                PuzzleGrid candidate = tryFillShape(shape);
+                if (candidate == null) continue;
+
+                if (!candidate.verify()) continue;
+                if (hasDuplicateEquationsShape(candidate, shape)) continue;
+
+                Map<Character, Integer> usage = countShapeOperatorUsage(candidate, shape);
+                boolean meetsMin = effectiveMinUsage <= 0 ||
+                        usage.values().stream().allMatch(c -> c >= effectiveMinUsage);
+                if (!meetsMin) {
+                    continue;
+                }
+                int globalAttempt = shapeAttempt * fillsPerShape + attempt;
+                System.err.printf("[Generator] Shape solved on attempt %d. Usage: %s%n", globalAttempt, usage);
+                return candidate;
+            }
+
+            if (fixedShape != null) break;
         }
         throw new IllegalStateException(
                 "Shape generation failed after " + config.maxGenerationAttempts + " attempts.");

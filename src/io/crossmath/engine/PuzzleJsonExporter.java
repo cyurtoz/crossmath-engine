@@ -233,8 +233,16 @@ public class PuzzleJsonExporter {
               .append("}");
         }
 
-        sb.append("\n    ]\n");
-        sb.append("  }");
+        sb.append("\n    ]");
+
+        boolean shouldHideOps = level != null && level.hideOperators;
+        if (shouldHideOps) {
+            sb.append(",\n    \"hiddenOperators\": [\n");
+            appendHiddenOperators(sb);
+            sb.append("\n    ]");
+        }
+
+        sb.append("\n  }");
     }
 
     private void appendSolution(StringBuilder sb) {
@@ -315,6 +323,87 @@ public class PuzzleJsonExporter {
                 cells.add((topRow + 2) + "," + col);
             }
         }
+    }
+
+    private void appendHiddenOperators(StringBuilder sb) {
+        List<String> allOpSymbols = collectAllOperatorSymbols();
+        boolean first = true;
+
+        if (grid.isShapeMode()) {
+            PuzzleShape shape = grid.shape();
+            int armIndex = 0;
+            for (EquationArm arm : shape.arms()) {
+                if (!mask.isArmVisible(armIndex)) {
+                    List<Operator> ops = grid.getArmOperators(arm);
+                    List<GridCell> operands = arm.operandCells();
+                    for (int i = 0; i < ops.size(); i++) {
+                        if (!first) sb.append(",\n");
+                        first = false;
+                        GridCell a = operands.get(i);
+                        GridCell b = operands.get(i + 1);
+                        sb.append("      {\"armIndex\": ").append(armIndex)
+                          .append(", \"opIndex\": ").append(i)
+                          .append(", \"betweenCells\": [{\"row\": ").append(a.row())
+                          .append(", \"col\": ").append(a.col())
+                          .append("}, {\"row\": ").append(b.row())
+                          .append(", \"col\": ").append(b.col())
+                          .append("}]")
+                          .append(", \"correct\": \"").append(ops.get(i).symbol())
+                          .append("\", \"options\": ").append(stringListToJson(allOpSymbols))
+                          .append("}");
+                    }
+                }
+                armIndex++;
+            }
+        } else {
+            for (EquationId id : mask.hiddenSet()) {
+                if (!first) sb.append(",\n");
+                first = false;
+                char correctOp;
+                if (id.axis() == EquationId.Axis.HORIZONTAL) {
+                    int row = id.lineIndex();
+                    correctOp = grid.horizontalOperators[row][id.equationIndex()].symbol();
+                } else {
+                    int col = id.lineIndex();
+                    correctOp = grid.verticalOperators[col][id.equationIndex()].symbol();
+                }
+                sb.append("      {\"axis\": \"").append(id.axis() == EquationId.Axis.HORIZONTAL ? "H" : "V")
+                  .append("\", \"lineIndex\": ").append(id.lineIndex())
+                  .append(", \"equationIndex\": ").append(id.equationIndex())
+                  .append(", \"correct\": \"").append(correctOp)
+                  .append("\", \"options\": ").append(stringListToJson(allOpSymbols))
+                  .append("}");
+            }
+        }
+    }
+
+    private List<String> collectAllOperatorSymbols() {
+        Set<String> symbols = new java.util.LinkedHashSet<>();
+        if (grid.isShapeMode()) {
+            for (EquationArm arm : grid.shape().arms()) {
+                for (Operator op : grid.getArmOperators(arm)) {
+                    symbols.add(String.valueOf(op.symbol()));
+                }
+            }
+        } else {
+            for (int row = 0; row < grid.config.matrixSize; row++)
+                for (int eq = 0; eq < grid.config.equationsPerLine; eq++)
+                    symbols.add(String.valueOf(grid.horizontalOperators[row][eq].symbol()));
+            for (int col = 0; col < grid.config.matrixSize; col++)
+                for (int eq = 0; eq < grid.config.equationsPerLine; eq++)
+                    symbols.add(String.valueOf(grid.verticalOperators[col][eq].symbol()));
+        }
+        return new ArrayList<>(symbols);
+    }
+
+    private static String stringListToJson(List<String> list) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("\"").append(list.get(i)).append("\"");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     private static String listToJson(List<Integer> list) {

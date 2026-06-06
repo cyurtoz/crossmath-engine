@@ -57,6 +57,7 @@ public enum DifficultyLevel {
                 .maxGenerationAttempts(10000)
                 .minUsagePerOperator(minUsage)
                 .numBrackets(4)
+                .avoidCarry(avoidCarry)
                 .build();
     }
 

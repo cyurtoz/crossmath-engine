@@ -114,6 +114,12 @@ public final class PuzzleConfig {
      */
     public final int numBrackets;
 
+    /**
+     * When true, addition pairs where the ones digits sum to 10 or more
+     * are rejected (e.g. 8+7). Used for early educational levels.
+     */
+    public final boolean avoidCarry;
+
     // ── Construction via builder ──────────────────────────────────────────────
 
     private PuzzleConfig(Builder builder) {
@@ -143,6 +149,7 @@ public final class PuzzleConfig {
         this.maxArmFreeOperands     = (builder.matrixSize - 1) / 2;
         this.targetEquationCount    = this.equationsPerLine * builder.matrixSize;
         this.numBrackets            = Math.max(1, builder.numBrackets);
+        this.avoidCarry             = builder.avoidCarry;
     }
 
     public static Builder builder() {
@@ -168,6 +175,7 @@ public final class PuzzleConfig {
         private int maxGenerationAttempts = 1000;
         private int minUsagePerOperator   = 2;
         private int numBrackets           = 4;
+        private boolean avoidCarry        = false;
 
         /** Grid dimension — must be odd and ≥ 3 (default 5 → 9×9 display). */
         public Builder matrixSize(int matrixSize) {
@@ -209,6 +217,12 @@ public final class PuzzleConfig {
          */
         public Builder numBrackets(int numBrackets) {
             this.numBrackets = numBrackets;
+            return this;
+        }
+
+        /** Reject addition pairs whose ones digits sum ≥ 10 (default false). */
+        public Builder avoidCarry(boolean avoidCarry) {
+            this.avoidCarry = avoidCarry;
             return this;
         }
 
