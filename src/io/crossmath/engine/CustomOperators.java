@@ -93,6 +93,48 @@ class MaxOperator implements Operator {
     public String constraints() { return "leftOperand ≠ rightOperand;  result = max(left, right)"; }
 }
 
+// ── AVG ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Integer average:  avg(leftOperand, rightOperand) = (left + right) / 2
+ * Constraint: leftOperand + rightOperand must be even; leftOperand ≠ rightOperand.
+ */
+class AvgOperator implements Operator {
+
+    @Override
+    public char symbol() { return 'a'; }
+
+    @Override
+    public int apply(int leftOperand, int rightOperand, PuzzleConfig config) {
+        if (leftOperand == rightOperand) return Integer.MIN_VALUE;
+        int sum = leftOperand + rightOperand;
+        if (sum % 2 != 0) return Integer.MIN_VALUE;
+        int avg = sum / 2;
+        if (avg < config.minCellValue || avg > config.maxCellValue) {
+            return Integer.MIN_VALUE;
+        }
+        return avg;
+    }
+
+    @Override
+    public List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
+        List<Integer> valid = new ArrayList<>();
+        for (int right = config.minCellValue; right <= config.maxAddOperand; right++) {
+            if (right != leftOperand && (leftOperand + right) % 2 == 0) {
+                int avg = (leftOperand + right) / 2;
+                if (avg >= config.minCellValue && avg <= config.maxCellValue) {
+                    valid.add(right);
+                }
+            }
+        }
+        Collections.shuffle(valid, random);
+        return valid;
+    }
+
+    @Override
+    public String constraints() { return "leftOperand ≠ rightOperand;  (left + right) is even;  result = avg(left, right)"; }
+}
+
 // ── EXP ────────────────────────────────────────────────────────────────────────
 
 /**

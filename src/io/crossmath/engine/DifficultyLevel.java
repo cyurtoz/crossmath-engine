@@ -14,9 +14,9 @@ public enum DifficultyLevel {
     LEVEL_3_5("3.5", 0,  50, "+-*",         5, 0.50, 0.60, 4, true,  false, false),
     LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, true,  true,  false),
     LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 5, true,  true,  false),
-    LEVEL_5  ("5",   0, 200, "+-*/mM",      7, 0.35, 0.45, 5, true,  true,  false),
-    LEVEL_5_5("5.5", 0, 200, "+-*/mM",      7, 0.30, 0.40, 5, true,  true,  false),
-    LEVEL_6  ("6",   0, 500, "+-*/mM^",     7, 0.20, 0.35, 5, true,  true,  false);
+    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 5, true,  true,  false),
+    LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, true,  true,  false),
+    LEVEL_6  ("6",   0, 500, "+-*/amM^",    7, 0.20, 0.35, 5, true,  true,  false);
 
     public final String label;
     public final int    minVal;
@@ -71,6 +71,7 @@ public enum DifficultyLevel {
             }
         }
 
+        if (allowed.contains('a')) registry.add(new AvgOperator());
         if (allowed.contains('m')) registry.add(new MinOperator());
         if (allowed.contains('M')) registry.add(new MaxOperator());
         if (allowed.contains('^')) registry.add(new ExpOperator());
