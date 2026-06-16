@@ -5,18 +5,18 @@ import java.util.Set;
 
 public enum DifficultyLevel {
 
-    LEVEL_0  ("0",   0,  10, "+",           3, 0.85, 0.95, 3, false, false, true),
-    LEVEL_1  ("1",   0,  10, "+",           3, 0.75, 0.85, 3, false, false, false),
-    LEVEL_1_5("1.5", 0,  10, "+-",          3, 0.70, 0.80, 4, false, false, false),
-    LEVEL_2  ("2",   0,  20, "+-",          3, 0.65, 0.75, 4, false, false, false),
-    LEVEL_2_5("2.5", 0,  20, "+-",          3, 0.60, 0.70, 4, false, false, false),
-    LEVEL_3  ("3",   0,  50, "+-*",         5, 0.55, 0.65, 4, false, false, false),
-    LEVEL_3_5("3.5", 0,  50, "+-*",         5, 0.50, 0.60, 4, true,  false, false),
-    LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, true,  true,  false),
-    LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 5, true,  true,  false),
-    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 5, true,  true,  false),
-    LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, true,  true,  false),
-    LEVEL_6  ("6",   0, 500, "+-*/amM^",    7, 0.20, 0.35, 5, true,  true,  false);
+    LEVEL_0  ("0",   0,  10, "+",           3, 0.85, 0.95, 3, false, false, true,  1),
+    LEVEL_1  ("1",   0,  10, "+",           3, 0.75, 0.85, 3, false, false, false, 1),
+    LEVEL_1_5("1.5", 0,  10, "+-",          3, 0.70, 0.80, 4, false, false, false, 1),
+    LEVEL_2  ("2",   0,  20, "+-",          3, 0.65, 0.75, 4, false, false, false, 1),
+    LEVEL_2_5("2.5", 0,  20, "+-",          3, 0.60, 0.70, 4, false, false, false, 1),
+    LEVEL_3  ("3",   0,  50, "+-*",         5, 0.55, 0.65, 4, false, false, false, 2),
+    LEVEL_3_5("3.5", 0,  50, "+-*",         5, 0.50, 0.60, 4, true,  false, false, 2),
+    LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, true,  true,  false, -1),
+    LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 5, true,  true,  false, -1),
+    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 5, true,  true,  false, -1),
+    LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, true,  true,  false, -1),
+    LEVEL_6  ("6",   0, 500, "+-*/amM^",    7, 0.20, 0.35, 5, true,  true,  false, -1);
 
     public final String label;
     public final int    minVal;
@@ -29,22 +29,24 @@ public enum DifficultyLevel {
     public final boolean hideOperators;
     public final boolean hideResults;
     public final boolean avoidCarry;
+    public final int    maxUnknownsPerEquation;
 
     DifficultyLevel(String label, int minVal, int maxVal, String allowedOps,
                     int matrixSize, double minVisible, double maxVisible,
                     int optionCount, boolean hideOperators, boolean hideResults,
-                    boolean avoidCarry) {
-        this.label         = label;
-        this.minVal        = minVal;
-        this.maxVal        = maxVal;
-        this.allowedOps    = allowedOps;
-        this.matrixSize    = matrixSize;
-        this.minVisible    = minVisible;
-        this.maxVisible    = maxVisible;
-        this.optionCount   = optionCount;
-        this.hideOperators = hideOperators;
-        this.hideResults   = hideResults;
-        this.avoidCarry    = avoidCarry;
+                    boolean avoidCarry, int maxUnknownsPerEquation) {
+        this.label                  = label;
+        this.minVal                 = minVal;
+        this.maxVal                 = maxVal;
+        this.allowedOps             = allowedOps;
+        this.matrixSize             = matrixSize;
+        this.minVisible             = minVisible;
+        this.maxVisible             = maxVisible;
+        this.optionCount            = optionCount;
+        this.hideOperators          = hideOperators;
+        this.hideResults            = hideResults;
+        this.avoidCarry             = avoidCarry;
+        this.maxUnknownsPerEquation = maxUnknownsPerEquation;
     }
 
     public PuzzleConfig buildConfig() {
@@ -77,7 +79,10 @@ public enum DifficultyLevel {
         if (allowed.contains('^')) registry.add(new ExpOperator());
     }
 
-    public EquationMask buildMask(PuzzleConfig config, int armCount, Random random) {
+    public EquationMask buildMask(PuzzleGrid grid, Random random) {
+        PuzzleConfig config = grid.config;
+        int armCount = grid.isShapeMode() ? grid.shape().armCount() : 0;
+
         double visibleFraction = minVisible + random.nextDouble() * (maxVisible - minVisible);
         int totalEquations = armCount > 0 ? armCount
                 : 2 * config.matrixSize * config.equationsPerLine;
@@ -85,9 +90,9 @@ public enum DifficultyLevel {
         countToHide = Math.min(countToHide, totalEquations - 1);
 
         if (armCount > 0) {
-            return EquationMask.randomForArms(armCount, countToHide, random);
+            return EquationMask.smartRandomForArms(grid.shape(), countToHide, random);
         }
-        return EquationMask.random(config, countToHide, random);
+        return EquationMask.smartRandom(config, countToHide, maxUnknownsPerEquation, random);
     }
 
     public static boolean hasCarry(int a, int b) {

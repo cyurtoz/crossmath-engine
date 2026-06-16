@@ -2,6 +2,7 @@ package io.crossmath.engine;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -140,5 +141,173 @@ public class EquationMask {
             }
         }
         return ids;
+    }
+
+    // ── Smart mask builders ──────────────────────────────────────────────────
+
+    /**
+     * Smart mask for fixed-grid mode. Greedily hides equations while ensuring:
+     * <ul>
+     *   <li>Each hidden equation shares at least one cell with a visible equation
+     *       (visible anchor constraint from grades.txt).</li>
+     *   <li>No visible equation has more than {@code maxUnknownsPerEq} cells
+     *       whose every equation is hidden (unknown-limit constraint).
+     *       Pass -1 to disable this check.</li>
+     * </ul>
+     */
+    public static EquationMask smartRandom(PuzzleConfig config, int countToHide,
+                                           int maxUnknownsPerEq, Random random) {
+        List<EquationId> allIds = buildAllEquationIds(config);
+
+        for (int attempt = 0; attempt < 50; attempt++) {
+            Collections.shuffle(allIds, random);
+            EquationMask mask = new EquationMask();
+            int hidden = 0;
+
+            for (EquationId id : allIds) {
+                if (hidden >= countToHide) break;
+                mask.hide(id);
+
+                if (!hasVisibleAnchors(mask, config) ||
+                    (maxUnknownsPerEq >= 0 && !meetsUnknownLimit(mask, config, maxUnknownsPerEq))) {
+                    mask.show(id);
+                } else {
+                    hidden++;
+                }
+            }
+
+            if (hidden >= countToHide) return mask;
+        }
+
+        return random(config, countToHide, random);
+    }
+
+    /**
+     * Smart mask for shape mode. Prefers hiding arms with fewer intersection
+     * cells (grades.txt: "hide non-intersection cells first") and ensures each
+     * hidden arm shares at least one cell with a visible arm.
+     */
+    public static EquationMask smartRandomForArms(PuzzleShape shape, int countToHide,
+                                                   Random random) {
+        int armCount = shape.armCount();
+        List<int[]> scored = new ArrayList<>(armCount);
+
+        for (int i = 0; i < armCount; i++) {
+            EquationArm arm = shape.arms().get(i);
+            int iCount = 0;
+            for (GridCell c : arm.operandCells()) {
+                if (shape.roleOf(c) == CellRole.INTERSECTION) iCount++;
+            }
+            scored.add(new int[]{i, iCount});
+        }
+
+        Collections.shuffle(scored, random);
+        scored.sort(Comparator.comparingInt(a -> a[1]));
+
+        EquationMask mask = new EquationMask();
+        int hidden = 0;
+
+        for (int[] entry : scored) {
+            if (hidden >= countToHide) break;
+            int idx = entry[0];
+            mask.hideArm(idx);
+
+            if (!hasShapeAnchors(mask, shape)) {
+                mask.showArm(idx);
+            } else {
+                hidden++;
+            }
+        }
+
+        return mask;
+    }
+
+    // ── Constraint helpers ───────────────────────────────────────────────────
+
+    private static List<EquationId> equationsForCell(int row, int col, PuzzleConfig config) {
+        List<EquationId> ids = new ArrayList<>(4);
+        for (int eq = 0; eq < config.equationsPerLine; eq++) {
+            if (col >= eq * 2 && col <= eq * 2 + 2) {
+                ids.add(new EquationId(EquationId.Axis.HORIZONTAL, row, eq));
+            }
+            if (row >= eq * 2 && row <= eq * 2 + 2) {
+                ids.add(new EquationId(EquationId.Axis.VERTICAL, col, eq));
+            }
+        }
+        return ids;
+    }
+
+    private static boolean isCellUnknown(int row, int col,
+                                          EquationMask mask, PuzzleConfig config) {
+        for (EquationId id : equationsForCell(row, col, config)) {
+            if (mask.isVisible(id)) return false;
+        }
+        return true;
+    }
+
+    private static int[][] cellsOfEquation(EquationId id) {
+        if (id.axis() == EquationId.Axis.HORIZONTAL) {
+            int row = id.lineIndex();
+            int left = id.equationIndex() * 2;
+            return new int[][]{{row, left}, {row, left + 1}, {row, left + 2}};
+        } else {
+            int col = id.lineIndex();
+            int top = id.equationIndex() * 2;
+            return new int[][]{{top, col}, {top + 1, col}, {top + 2, col}};
+        }
+    }
+
+    private static boolean hasVisibleAnchors(EquationMask mask, PuzzleConfig config) {
+        for (EquationId hidden : mask.hiddenSet()) {
+            boolean hasAnchor = false;
+            for (int[] cell : cellsOfEquation(hidden)) {
+                if (!isCellUnknown(cell[0], cell[1], mask, config)) {
+                    hasAnchor = true;
+                    break;
+                }
+            }
+            if (!hasAnchor) return false;
+        }
+        return true;
+    }
+
+    private static boolean meetsUnknownLimit(EquationMask mask, PuzzleConfig config,
+                                              int maxUnknowns) {
+        List<EquationId> allIds = buildAllEquationIds(config);
+        for (EquationId id : allIds) {
+            if (!mask.isVisible(id)) continue;
+            int unknowns = 0;
+            for (int[] cell : cellsOfEquation(id)) {
+                if (isCellUnknown(cell[0], cell[1], mask, config)) {
+                    unknowns++;
+                }
+            }
+            if (unknowns > maxUnknowns) return false;
+        }
+        return true;
+    }
+
+    private static boolean hasShapeAnchors(EquationMask mask, PuzzleShape shape) {
+        List<EquationArm> arms = shape.arms();
+        Set<Integer> hiddenSet = mask.hiddenArmSet();
+
+        for (int hiddenIdx : hiddenSet) {
+            EquationArm hiddenArm = arms.get(hiddenIdx);
+            boolean hasAnchor = false;
+
+            for (GridCell cell : hiddenArm.allCells()) {
+                if (hasAnchor) break;
+                for (int otherIdx = 0; otherIdx < arms.size(); otherIdx++) {
+                    if (otherIdx == hiddenIdx || hiddenSet.contains(otherIdx)) continue;
+                    if (arms.get(otherIdx).allCells().contains(cell)) {
+                        hasAnchor = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasAnchor) return false;
+        }
+        return true;
     }
 }

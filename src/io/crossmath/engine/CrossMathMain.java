@@ -164,7 +164,7 @@ public class CrossMathMain {
         solutionPrinter.printSolution();
         solutionPrinter.printEquations();
 
-        EquationMask puzzleMask = level.buildMask(config, armCount, random);
+        EquationMask puzzleMask = level.buildMask(solvedGrid, random);
         System.out.printf("  Hidden: %d%n%n", puzzleMask.hiddenCount());
 
         PuzzlePrinter puzzlePrinter = new PuzzlePrinter(solvedGrid, puzzleMask);
@@ -203,7 +203,7 @@ public class CrossMathMain {
                 solvedGrid = generator.generate();
             }
 
-            EquationMask puzzleMask = level.buildMask(config, armCount, random);
+            EquationMask puzzleMask = level.buildMask(solvedGrid, random);
             PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
             System.out.println(exporter.exportJson());
         } else {
