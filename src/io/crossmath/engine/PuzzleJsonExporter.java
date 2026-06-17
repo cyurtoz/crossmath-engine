@@ -28,13 +28,21 @@ public class PuzzleJsonExporter {
     private final DifficultyLevel level;
     private final DistractorGenerator distractorGen;
     private final Random random;
+    private final OperatorRegistry registry;
 
     public PuzzleJsonExporter(PuzzleGrid grid, EquationMask mask,
                               DifficultyLevel level, Random random) {
+        this(grid, mask, level, random, null);
+    }
+
+    public PuzzleJsonExporter(PuzzleGrid grid, EquationMask mask,
+                              DifficultyLevel level, Random random,
+                              OperatorRegistry registry) {
         this.grid = grid;
         this.mask = mask;
         this.level = level;
         this.random = random;
+        this.registry = registry;
         this.distractorGen = new DistractorGenerator(grid.config, random);
     }
 
@@ -52,8 +60,15 @@ public class PuzzleJsonExporter {
         appendPuzzle(sb);
         sb.append(",\n");
         appendSolution(sb);
+        sb.append(",\n");
+        appendUniqueness(sb);
         sb.append("\n}");
         return sb.toString();
+    }
+
+    private void appendUniqueness(StringBuilder sb) {
+        boolean unique = UniquenessChecker.isUnique(grid, mask, registry);
+        sb.append("  \"uniqueSolution\": ").append(unique);
     }
 
     private void appendConfig(StringBuilder sb) {
@@ -76,9 +91,10 @@ public class PuzzleJsonExporter {
         }
         sb.append("  \"level\": {\n");
         sb.append("    \"id\": \"").append(level.label).append("\",\n");
-        sb.append("    \"optionCount\": ").append(level.optionCount).append(",\n");
-        sb.append("    \"hideOperators\": ").append(level.hideOperators).append(",\n");
-        sb.append("    \"hideResults\": ").append(level.hideResults).append("\n");
+        sb.append("    \"minOptionCount\": ").append(level.minOptionCount).append(",\n");
+        sb.append("    \"maxOptionCount\": ").append(level.maxOptionCount).append(",\n");
+        sb.append("    \"operatorHideChance\": ").append(level.operatorHideChance).append(",\n");
+        sb.append("    \"resultHideChance\": ").append(level.resultHideChance).append("\n");
         sb.append("  }");
     }
 
@@ -215,7 +231,7 @@ public class PuzzleJsonExporter {
         sb.append("    \"hiddenCells\": [\n");
 
         List<int[]> hiddenCells = collectHiddenCells();
-        int optionCount = level != null ? level.optionCount : 4;
+        int optionCount = level != null ? level.optionCount(random) : 4;
 
         boolean first = true;
         for (int[] cell : hiddenCells) {
@@ -235,7 +251,7 @@ public class PuzzleJsonExporter {
 
         sb.append("\n    ]");
 
-        boolean shouldHideOps = level != null && level.hideOperators;
+        boolean shouldHideOps = level != null && level.operatorHideChance > 0;
         if (shouldHideOps) {
             sb.append(",\n    \"hiddenOperators\": [\n");
             appendHiddenOperators(sb);
@@ -272,7 +288,7 @@ public class PuzzleJsonExporter {
 
     private List<int[]> collectHiddenCells() {
         List<int[]> hidden = new ArrayList<>();
-        boolean includeResults = level == null || level.hideResults;
+        double resultChance = level == null ? 1.0 : level.resultHideChance;
 
         if (grid.isShapeMode()) {
             PuzzleShape shape = grid.shape();
@@ -283,7 +299,8 @@ public class PuzzleJsonExporter {
                     for (GridCell cell : arm.operandCells()) {
                         hiddenSet.add(cell);
                     }
-                    if (includeResults) {
+                    // Roll per-equation to decide whether to also hide the result
+                    if (random.nextDouble() < resultChance) {
                         hiddenSet.add(arm.resultCell());
                     }
                 }
@@ -295,7 +312,9 @@ public class PuzzleJsonExporter {
         } else {
             Set<String> hiddenSet = new java.util.LinkedHashSet<>();
             for (EquationId id : mask.hiddenSet()) {
-                addCellsForEquation(id, hiddenSet, includeResults);
+                // Roll per-equation to decide whether to also hide the result
+                boolean includeResult = random.nextDouble() < resultChance;
+                addCellsForEquation(id, hiddenSet, includeResult);
             }
             for (String key : hiddenSet) {
                 String[] parts = key.split(",");
@@ -327,13 +346,14 @@ public class PuzzleJsonExporter {
 
     private void appendHiddenOperators(StringBuilder sb) {
         List<String> allOpSymbols = collectAllOperatorSymbols();
+        double opChance = level != null ? level.operatorHideChance : 1.0;
         boolean first = true;
 
         if (grid.isShapeMode()) {
             PuzzleShape shape = grid.shape();
             int armIndex = 0;
             for (EquationArm arm : shape.arms()) {
-                if (!mask.isArmVisible(armIndex)) {
+                if (!mask.isArmVisible(armIndex) && random.nextDouble() < opChance) {
                     List<Operator> ops = grid.getArmOperators(arm);
                     List<GridCell> operands = arm.operandCells();
                     for (int i = 0; i < ops.size(); i++) {
@@ -357,6 +377,8 @@ public class PuzzleJsonExporter {
             }
         } else {
             for (EquationId id : mask.hiddenSet()) {
+                // Roll per-equation to decide whether to hide the operator
+                if (random.nextDouble() >= opChance) continue;
                 if (!first) sb.append(",\n");
                 first = false;
                 char correctOp;

@@ -203,8 +203,8 @@ public class CrossMathMain {
                 solvedGrid = generator.generate();
             }
 
-            EquationMask puzzleMask = level.buildMask(solvedGrid, random);
-            PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
+            EquationMask puzzleMask = level.buildMask(solvedGrid, random, registry);
+            PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random, registry);
             System.out.println(exporter.exportJson());
         } else {
             seed = args.length > 0 ? Long.parseLong(args[0]) : System.currentTimeMillis();
@@ -234,12 +234,12 @@ public class CrossMathMain {
                 ShapeGenerator shapeGen = new ShapeGenerator(config, random);
                 solvedGrid = generator.generate(shapeGen);
                 EquationMask puzzleMask = EquationMask.randomForShape(solvedGrid.shape(), equationsToHide, random);
-                PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
+                PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random, registry);
                 System.out.println(exporter.exportJson());
             } else {
                 solvedGrid = generator.generate();
                 EquationMask puzzleMask = EquationMask.random(config, equationsToHide, random);
-                PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random);
+                PuzzleJsonExporter exporter = new PuzzleJsonExporter(solvedGrid, puzzleMask, level, random, registry);
                 System.out.println(exporter.exportJson());
             }
         }

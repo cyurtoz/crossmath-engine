@@ -77,10 +77,30 @@ public class DistractorGenerator {
             distractors.add(correct + correct);
         }
 
+        // Inverse-confusion distractors for levels 1.5–2.5:
+        // approximate "wrong operation" by halving/doubling the difference
+        if (level.ordinal() >= DifficultyLevel.LEVEL_1_5.ordinal()
+                && level.ordinal() <= DifficultyLevel.LEVEL_2_5.ordinal()) {
+            int half = Math.max(1, correct / 2);
+            distractors.add(correct - half);
+            distractors.add(correct + half);
+        }
+
         if (level.ordinal() >= DifficultyLevel.LEVEL_3.ordinal()) {
             if (correct >= 4) distractors.add(correct / 2);
             int reversed = reverseDigits(correct);
             if (reversed != correct) distractors.add(reversed);
+
+            // Multiplication-table neighbor distractors: ±1 multiplied by small factors
+            for (int factor = 2; factor <= 5; factor++) {
+                distractors.add((correct - 1) * factor);
+                distractors.add((correct + 1) * factor);
+                if (correct > factor && correct % factor == 0) {
+                    // nearby multiples of the same factor
+                    distractors.add(correct + factor);
+                    distractors.add(correct - factor);
+                }
+            }
         }
 
         if (level.ordinal() >= DifficultyLevel.LEVEL_4.ordinal()) {

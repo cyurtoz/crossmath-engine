@@ -5,18 +5,18 @@ import java.util.Set;
 
 public enum DifficultyLevel {
 
-    LEVEL_0  ("0",   0,  10, "+",           3, 0.85, 0.95, 3, false, false, true,  1),
-    LEVEL_1  ("1",   0,  10, "+",           3, 0.75, 0.85, 3, false, false, false, 1),
-    LEVEL_1_5("1.5", 0,  10, "+-",          3, 0.70, 0.80, 4, false, false, false, 1),
-    LEVEL_2  ("2",   0,  20, "+-",          3, 0.65, 0.75, 4, false, false, false, 1),
-    LEVEL_2_5("2.5", 0,  20, "+-",          3, 0.60, 0.70, 4, false, false, false, 1),
-    LEVEL_3  ("3",   0,  50, "+-*",         5, 0.55, 0.65, 4, false, false, false, 2),
-    LEVEL_3_5("3.5", 0,  50, "+-*",         5, 0.50, 0.60, 4, true,  false, false, 2),
-    LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, true,  true,  false, -1),
-    LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 5, true,  true,  false, -1),
-    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 5, true,  true,  false, -1),
-    LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, true,  true,  false, -1),
-    LEVEL_6  ("6",   0, 500, "+-*/amM^",    7, 0.20, 0.35, 5, true,  true,  false, -1);
+    LEVEL_0  ("0",   0,  10, "+",           3, 0.85, 0.95, 3, 3, 0.0,  0.0,  true,  1),
+    LEVEL_1  ("1",   0,  10, "+",           3, 0.75, 0.85, 3, 3, 0.0,  0.0,  false, 1),
+    LEVEL_1_5("1.5", 0,  10, "+-",          3, 0.70, 0.80, 3, 4, 0.0,  0.0,  false, 1),
+    LEVEL_2  ("2",   0,  20, "+-",          3, 0.65, 0.75, 3, 4, 0.0,  0.0,  false, 1),
+    LEVEL_2_5("2.5", 0,  20, "+-",          3, 0.60, 0.70, 4, 4, 0.0,  0.2,  false, 1),
+    LEVEL_3  ("3",   0,  50, "+-*",         5, 0.55, 0.65, 4, 4, 0.0,  0.2,  false, 2),
+    LEVEL_3_5("3.5", 0,  50, "+-*",         5, 0.50, 0.60, 4, 4, 0.3,  0.5,  false, 2),
+    LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, 4, 0.5,  0.7,  false, -1),
+    LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 4, 5, 0.5,  0.7,  false, -1),
+    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 4, 5, 0.7,  0.85, false, -1),
+    LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, 5, 0.7,  0.85, false, -1),
+    LEVEL_6  ("6",   0, 500, "+-*/amM^r",   7, 0.20, 0.35, 5, 5, 0.85, 0.85, false, -1);
 
     public final String label;
     public final int    minVal;
@@ -25,15 +25,17 @@ public enum DifficultyLevel {
     public final int    matrixSize;
     public final double minVisible;
     public final double maxVisible;
-    public final int    optionCount;
-    public final boolean hideOperators;
-    public final boolean hideResults;
+    public final int    minOptionCount;
+    public final int    maxOptionCount;
+    public final double operatorHideChance;
+    public final double resultHideChance;
     public final boolean avoidCarry;
     public final int    maxUnknownsPerEquation;
 
     DifficultyLevel(String label, int minVal, int maxVal, String allowedOps,
                     int matrixSize, double minVisible, double maxVisible,
-                    int optionCount, boolean hideOperators, boolean hideResults,
+                    int minOptionCount, int maxOptionCount,
+                    double operatorHideChance, double resultHideChance,
                     boolean avoidCarry, int maxUnknownsPerEquation) {
         this.label                  = label;
         this.minVal                 = minVal;
@@ -42,11 +44,20 @@ public enum DifficultyLevel {
         this.matrixSize             = matrixSize;
         this.minVisible             = minVisible;
         this.maxVisible             = maxVisible;
-        this.optionCount            = optionCount;
-        this.hideOperators          = hideOperators;
-        this.hideResults            = hideResults;
+        this.minOptionCount         = minOptionCount;
+        this.maxOptionCount         = maxOptionCount;
+        this.operatorHideChance     = operatorHideChance;
+        this.resultHideChance       = resultHideChance;
         this.avoidCarry             = avoidCarry;
         this.maxUnknownsPerEquation = maxUnknownsPerEquation;
+    }
+
+    /**
+     * Returns a random option count in [{@link #minOptionCount}, {@link #maxOptionCount}].
+     */
+    public int optionCount(Random random) {
+        if (minOptionCount == maxOptionCount) return minOptionCount;
+        return minOptionCount + random.nextInt(maxOptionCount - minOptionCount + 1);
     }
 
     public PuzzleConfig buildConfig() {
@@ -77,9 +88,21 @@ public enum DifficultyLevel {
         if (allowed.contains('m')) registry.add(new MinOperator());
         if (allowed.contains('M')) registry.add(new MaxOperator());
         if (allowed.contains('^')) registry.add(new ExpOperator());
+        if (allowed.contains('r')) registry.add(new SqrtOperator());
     }
 
     public EquationMask buildMask(PuzzleGrid grid, Random random) {
+        return buildMask(grid, random, null);
+    }
+
+    /**
+     * Builds a mask and, when a non-null {@code registry} is supplied,
+     * retries up to {@value #MAX_UNIQUENESS_RETRIES} times to find a mask
+     * that produces a uniquely solvable puzzle. Falls back to the best
+     * available mask if uniqueness cannot be achieved.
+     */
+    public EquationMask buildMask(PuzzleGrid grid, Random random,
+                                  OperatorRegistry registry) {
         PuzzleConfig config = grid.config;
         int armCount = grid.isShapeMode() ? grid.shape().armCount() : 0;
 
@@ -89,11 +112,35 @@ public enum DifficultyLevel {
         int countToHide = Math.max(1, totalEquations - (int) Math.round(totalEquations * visibleFraction));
         countToHide = Math.min(countToHide, totalEquations - 1);
 
-        if (armCount > 0) {
-            return EquationMask.smartRandomForArms(grid.shape(), countToHide, random);
+        EquationMask bestMask = null;
+
+        int attempts = (registry != null) ? MAX_UNIQUENESS_RETRIES : 1;
+        for (int i = 0; i < attempts; i++) {
+            EquationMask candidate;
+            if (armCount > 0) {
+                candidate = EquationMask.smartRandomForArms(grid.shape(), countToHide, random);
+            } else {
+                candidate = EquationMask.smartRandom(config, countToHide, maxUnknownsPerEquation, random);
+            }
+
+            if (bestMask == null) {
+                bestMask = candidate;
+            }
+
+            if (registry == null) {
+                return candidate;
+            }
+
+            if (UniquenessChecker.isUnique(grid, candidate, registry)) {
+                return candidate;
+            }
+            bestMask = candidate; // keep the latest attempt as fallback
         }
-        return EquationMask.smartRandom(config, countToHide, maxUnknownsPerEquation, random);
+
+        return bestMask;
     }
+
+    private static final int MAX_UNIQUENESS_RETRIES = 20;
 
     public static boolean hasCarry(int a, int b) {
         return (a % 10) + (b % 10) >= 10;
