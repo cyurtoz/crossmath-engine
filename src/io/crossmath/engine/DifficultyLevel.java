@@ -118,7 +118,8 @@ public enum DifficultyLevel {
         for (int i = 0; i < attempts; i++) {
             EquationMask candidate;
             if (armCount > 0) {
-                candidate = EquationMask.smartRandomForArms(grid.shape(), countToHide, random);
+                boolean intersectionsAreKey = ordinal() >= LEVEL_3.ordinal();
+                candidate = EquationMask.smartRandomForArms(grid.shape(), countToHide, random, intersectionsAreKey);
             } else {
                 candidate = EquationMask.smartRandom(config, countToHide, maxUnknownsPerEquation, random);
             }

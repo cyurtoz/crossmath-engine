@@ -74,11 +74,8 @@ public class DistractorGenerator {
     private void addOperationConfusion(Set<Integer> distractors, int correct, DifficultyLevel level) {
         if (level.ordinal() >= DifficultyLevel.LEVEL_1_5.ordinal()) {
             if (correct > 1) distractors.add(correct * 2);
-            distractors.add(correct + correct);
         }
 
-        // Inverse-confusion distractors for levels 1.5–2.5:
-        // approximate "wrong operation" by halving/doubling the difference
         if (level.ordinal() >= DifficultyLevel.LEVEL_1_5.ordinal()
                 && level.ordinal() <= DifficultyLevel.LEVEL_2_5.ordinal()) {
             int half = Math.max(1, correct / 2);
@@ -91,12 +88,10 @@ public class DistractorGenerator {
             int reversed = reverseDigits(correct);
             if (reversed != correct) distractors.add(reversed);
 
-            // Multiplication-table neighbor distractors: ±1 multiplied by small factors
             for (int factor = 2; factor <= 5; factor++) {
                 distractors.add((correct - 1) * factor);
                 distractors.add((correct + 1) * factor);
                 if (correct > factor && correct % factor == 0) {
-                    // nearby multiples of the same factor
                     distractors.add(correct + factor);
                     distractors.add(correct - factor);
                 }
@@ -110,6 +105,34 @@ public class DistractorGenerator {
                 int nearFactor = findNearFactor(correct);
                 if (nearFactor != correct) distractors.add(nearFactor);
             }
+            if (correct >= 2) {
+                for (int d = 2; d <= Math.min(12, correct); d++) {
+                    if (correct % d == 0) {
+                        distractors.add(correct / d + 1);
+                        distractors.add(correct / d - 1);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (level.ordinal() >= DifficultyLevel.LEVEL_4_5.ordinal()) {
+            distractors.add(correct + 5);
+            distractors.add(correct - 5);
+            if (correct > 3) distractors.add(correct * 2 - 1);
+            if (correct > 1) distractors.add((correct - 1) * (correct - 1) > config.maxCellValue
+                    ? correct + 3 : (correct - 1) * (correct - 1));
+        }
+
+        if (level.ordinal() >= DifficultyLevel.LEVEL_5.ordinal()) {
+            distractors.add(correct + 15);
+            distractors.add(correct - 15);
+            if (correct >= 4) {
+                distractors.add(correct * 3 / 2);
+                distractors.add(correct * 2 / 3);
+            }
+            int swapOp = correct > 10 ? correct - (correct % 10) + (correct / 10 % 10) : correct + 7;
+            distractors.add(swapOp);
         }
     }
 

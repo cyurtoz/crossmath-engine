@@ -183,12 +183,20 @@ public class EquationMask {
     }
 
     /**
-     * Smart mask for shape mode. Prefers hiding arms with fewer intersection
-     * cells (grades.txt: "hide non-intersection cells first") and ensures each
-     * hidden arm shares at least one cell with a visible arm.
+     * Smart mask for shape mode. When {@code intersectionsAreKey} is false
+     * (early levels), prefers hiding arms with fewer intersection cells
+     * (grades.txt: "hide non-intersection cells first"). When true
+     * (level 3+), prefers hiding intersection-heavy arms so intersections
+     * become the critical deduction nodes (grades.txt: "intersections
+     * become key after level 3").
      */
     public static EquationMask smartRandomForArms(PuzzleShape shape, int countToHide,
                                                    Random random) {
+        return smartRandomForArms(shape, countToHide, random, false);
+    }
+
+    public static EquationMask smartRandomForArms(PuzzleShape shape, int countToHide,
+                                                   Random random, boolean intersectionsAreKey) {
         int armCount = shape.armCount();
         List<int[]> scored = new ArrayList<>(armCount);
 
@@ -202,7 +210,11 @@ public class EquationMask {
         }
 
         Collections.shuffle(scored, random);
-        scored.sort(Comparator.comparingInt(a -> a[1]));
+        if (intersectionsAreKey) {
+            scored.sort(Comparator.comparingInt(a -> -a[1]));
+        } else {
+            scored.sort(Comparator.comparingInt(a -> a[1]));
+        }
 
         EquationMask mask = new EquationMask();
         int hidden = 0;
