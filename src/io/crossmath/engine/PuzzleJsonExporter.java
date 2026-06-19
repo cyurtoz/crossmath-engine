@@ -401,6 +401,11 @@ public class PuzzleJsonExporter {
 
     private List<String> collectAllOperatorSymbols() {
         Set<String> symbols = new java.util.LinkedHashSet<>();
+        if (registry != null) {
+            for (Operator op : registry.all()) {
+                symbols.add(String.valueOf(op.symbol()));
+            }
+        }
         if (grid.isShapeMode()) {
             for (EquationArm arm : grid.shape().arms()) {
                 for (Operator op : grid.getArmOperators(arm)) {

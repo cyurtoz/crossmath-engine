@@ -217,15 +217,11 @@ class SqrtOperator implements Operator {
         return (root >= 2) ? root : Integer.MIN_VALUE;
     }
 
-    /**
-     * Unary — returns a single-element list with {@code 0} as the conventional
-     * right operand placeholder, only when the left operand is a perfect square.
-     */
     @Override
     public List<Integer> validRightOperands(int radicand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
         if (apply(radicand, 0, config) != Integer.MIN_VALUE) {
-            valid.add(0);   // convention: 0 as the ignored right operand for unary ops
+            valid.add(config.minCellValue);
         }
         return valid;
     }
