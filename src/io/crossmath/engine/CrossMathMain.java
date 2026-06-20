@@ -164,7 +164,7 @@ public class CrossMathMain {
         solutionPrinter.printSolution();
         solutionPrinter.printEquations();
 
-        EquationMask puzzleMask = level.buildMask(solvedGrid, random);
+        EquationMask puzzleMask = level.buildMask(solvedGrid, random, registry);
         System.out.printf("  Hidden: %d%n%n", puzzleMask.hiddenCount());
 
         PuzzlePrinter puzzlePrinter = new PuzzlePrinter(solvedGrid, puzzleMask);

@@ -46,7 +46,7 @@ class MinOperator implements Operator {
     @Override
     public List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
-        for (int right = config.minCellValue; right <= config.maxAddOperand; right++) {
+        for (int right = config.minCellValue; right <= config.maxCellValue; right++) {
             if (right != leftOperand) valid.add(right);
         }
         Collections.shuffle(valid, random);
@@ -82,7 +82,7 @@ class MaxOperator implements Operator {
     @Override
     public List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
-        for (int right = config.minCellValue; right <= config.maxAddOperand; right++) {
+        for (int right = config.minCellValue; right <= config.maxCellValue; right++) {
             if (right != leftOperand) valid.add(right);
         }
         Collections.shuffle(valid, random);
@@ -119,7 +119,7 @@ class AvgOperator implements Operator {
     @Override
     public List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
-        for (int right = config.minCellValue; right <= config.maxAddOperand; right++) {
+        for (int right = config.minCellValue; right <= config.maxCellValue; right++) {
             if (right != leftOperand && (leftOperand + right) % 2 == 0) {
                 int avg = (leftOperand + right) / 2;
                 if (avg >= config.minCellValue && avg <= config.maxCellValue) {

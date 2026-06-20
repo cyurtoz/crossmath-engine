@@ -65,7 +65,7 @@ public class DistractorGenerator {
         distractors.add(correct + 1);
         distractors.add(correct - 1);
 
-        if (level.ordinal() >= DifficultyLevel.LEVEL_2.ordinal()) {
+        if (level.ordinal() >= DifficultyLevel.LEVEL_1_5.ordinal()) {
             distractors.add(correct + 2);
             distractors.add(correct - 2);
         }
