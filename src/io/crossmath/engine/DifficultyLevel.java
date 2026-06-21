@@ -16,7 +16,8 @@ public enum DifficultyLevel {
     LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 4, 5, 0.5,  0.7,  false, -1),
     LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 4, 5, 0.7,  0.85, false, -1),
     LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, 5, 0.7,  0.85, false, -1),
-    LEVEL_6  ("6",   0, 500, "+-*/amM^r",   7, 0.20, 0.35, 5, 5, 0.85, 0.85, false, -1);
+    LEVEL_6  ("6",   0, 500, "+-*/amM^r",   7, 0.20, 0.35, 5, 5, 0.85, 0.85, false, -1),
+    LEVEL_7  ("7",   0, 999, "+-*/amM^r%L", 7, 0.15, 0.30, 5, 6, 0.85, 0.90, false, -1);
 
     public final String label;
     public final int    minVal;
@@ -89,6 +90,8 @@ public enum DifficultyLevel {
         if (allowed.contains('M')) registry.add(new MaxOperator());
         if (allowed.contains('^')) registry.add(new ExpOperator());
         if (allowed.contains('r')) registry.add(new SqrtOperator());
+        if (allowed.contains('%')) registry.add(new ModuloOperator());
+        if (allowed.contains('L')) registry.add(new LogOperator());
     }
 
     public EquationMask buildMask(PuzzleGrid grid, Random random) {

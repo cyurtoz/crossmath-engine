@@ -104,6 +104,15 @@ public class CrossMathTest {
         // Extra: DifficultyLevel.parse
         testDifficultyLevelParse();
 
+        // 15. ModuloOperator and LogOperator
+        testModuloOperator();
+        testModuloOperatorValidDomain();
+        testLogOperator();
+        testLogOperatorValidDomain();
+        testLevel7GeneratesAndVerifies();
+        testLevel7ShapeMode();
+        testLevel7MultipleSeeds();
+
         System.out.println("\n=== Results ===");
         System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
 
@@ -1090,5 +1099,178 @@ public class CrossMathTest {
         assertEquals("parse('6') is LEVEL_6", DifficultyLevel.LEVEL_6, DifficultyLevel.parse("6"));
 
         assertThrows("parse('99') throws", () -> DifficultyLevel.parse("99"));
+        assertEquals("parse('7') is LEVEL_7", DifficultyLevel.LEVEL_7, DifficultyLevel.parse("7"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 15. ModuloOperator and LogOperator
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static void testModuloOperator() {
+        System.out.println("\n-- ModuloOperator --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(100).build();
+        ModuloOperator mod = new ModuloOperator();
+
+        assertEquals("symbol is %", '%', mod.symbol());
+        assertFalse("modulo is not unary", mod.isUnary());
+
+        assertEquals("10 % 3 = 1", 1, mod.apply(10, 3, config));
+        assertEquals("17 % 5 = 2", 2, mod.apply(17, 5, config));
+        assertEquals("29 % 7 = 1", 1, mod.apply(29, 7, config));
+
+        // Exact divisibility rejected (overlaps with division)
+        assertEquals("10 % 5 rejected (exact div)", Integer.MIN_VALUE, mod.apply(10, 5, config));
+        assertEquals("12 % 4 rejected (exact div)", Integer.MIN_VALUE, mod.apply(12, 4, config));
+
+        // right < 2 rejected
+        assertEquals("10 % 1 rejected", Integer.MIN_VALUE, mod.apply(10, 1, config));
+        assertEquals("10 % 0 rejected", Integer.MIN_VALUE, mod.apply(10, 0, config));
+
+        // left <= right rejected
+        assertEquals("3 % 5 rejected (left <= right)", Integer.MIN_VALUE, mod.apply(3, 5, config));
+        assertEquals("5 % 5 rejected (left == right)", Integer.MIN_VALUE, mod.apply(5, 5, config));
+    }
+
+    private static void testModuloOperatorValidDomain() {
+        System.out.println("\n-- ModuloOperator validRightOperands --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(100).build();
+        ModuloOperator mod = new ModuloOperator();
+        Random random = new Random(42);
+
+        List<Integer> domain = mod.validRightOperands(10, config, random);
+        assertTrue("10 has valid modulo operands", domain.size() > 0);
+
+        boolean allValid = true;
+        for (int right : domain) {
+            if (mod.apply(10, right, config) == Integer.MIN_VALUE) {
+                allValid = false;
+            }
+        }
+        assertTrue("All returned operands are valid for 10", allValid);
+
+        List<Integer> domain3 = mod.validRightOperands(3, config, random);
+        assertTrue("3 % 2 = 1 is the only valid operand", domain3.size() == 1 && domain3.contains(2));
+
+        List<Integer> domain2 = mod.validRightOperands(2, config, random);
+        assertEquals("2 has no valid modulo operands", 0, domain2.size());
+    }
+
+    private static void testLogOperator() {
+        System.out.println("\n-- LogOperator --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(500).build();
+        LogOperator log = new LogOperator();
+
+        assertEquals("symbol is L", 'L', log.symbol());
+        assertFalse("log is not unary", log.isUnary());
+
+        assertEquals("log_2(8) = 3", 3, log.apply(2, 8, config));
+        assertEquals("log_2(16) = 4", 4, log.apply(2, 16, config));
+        assertEquals("log_3(27) = 3", 3, log.apply(3, 27, config));
+        assertEquals("log_10(100) = 2", 2, log.apply(10, 100, config));
+        assertEquals("log_5(125) = 3", 3, log.apply(5, 125, config));
+
+        assertEquals("log_2(7) rejected", Integer.MIN_VALUE, log.apply(2, 7, config));
+        assertEquals("log_3(10) rejected", Integer.MIN_VALUE, log.apply(3, 10, config));
+
+        assertEquals("log_2(2) = 1 rejected (trivial)", Integer.MIN_VALUE, log.apply(2, 2, config));
+        assertEquals("log_5(1) rejected", Integer.MIN_VALUE, log.apply(5, 1, config));
+
+        assertEquals("log_1(1) rejected", Integer.MIN_VALUE, log.apply(1, 1, config));
+        assertEquals("log_0(0) rejected", Integer.MIN_VALUE, log.apply(0, 0, config));
+    }
+
+    private static void testLogOperatorValidDomain() {
+        System.out.println("\n-- LogOperator validRightOperands --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(500).build();
+        LogOperator log = new LogOperator();
+        Random random = new Random(42);
+
+        List<Integer> domain2 = log.validRightOperands(2, config, random);
+        assertTrue("Base 2 has multiple valid arguments", domain2.size() >= 5);
+        assertTrue("Base 2 includes 4 (2^2)", domain2.contains(4));
+        assertTrue("Base 2 includes 8 (2^3)", domain2.contains(8));
+        assertTrue("Base 2 includes 256 (2^8)", domain2.contains(256));
+        assertFalse("Base 2 excludes 2 (exponent=1 trivial)", domain2.contains(2));
+
+        List<Integer> domain10 = log.validRightOperands(10, config, random);
+        assertTrue("Base 10 includes 100", domain10.contains(100));
+        assertFalse("Base 10 excludes 1000 (> maxCellValue)", domain10.contains(1000));
+
+        List<Integer> domain1 = log.validRightOperands(1, config, random);
+        assertEquals("Base 1 has no valid arguments", 0, domain1.size());
+
+        boolean allValid = true;
+        for (int arg : domain2) {
+            if (log.apply(2, arg, config) == Integer.MIN_VALUE) {
+                allValid = false;
+            }
+        }
+        assertTrue("All returned base-2 arguments are valid", allValid);
+    }
+
+    private static void testLevel7GeneratesAndVerifies() {
+        System.out.println("\n-- Level 7 generates and verifies --");
+        DifficultyLevel level = DifficultyLevel.LEVEL_7;
+        PuzzleConfig config = level.buildConfig();
+        Random random = new Random(42);
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+
+        boolean hasModulo = registry.all().stream().anyMatch(op -> op.symbol() == '%');
+        boolean hasLog = registry.all().stream().anyMatch(op -> op.symbol() == 'L');
+        assertTrue("Level 7 registry has modulo", hasModulo);
+        assertTrue("Level 7 registry has log", hasLog);
+
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+
+        assertTrue("Level 7 grid not null", grid != null);
+        assertTrue("Level 7 grid verifies", grid.verify());
+    }
+
+    private static void testLevel7ShapeMode() {
+        System.out.println("\n-- Level 7 shape mode --");
+        DifficultyLevel level = DifficultyLevel.LEVEL_7;
+        PuzzleConfig config = level.buildConfig();
+        Random random = new Random(123);
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+
+        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate(shapeGen);
+
+        assertTrue("Level 7 shape grid not null", grid != null);
+        assertTrue("Level 7 shape mode", grid.isShapeMode());
+        assertTrue("Level 7 shape grid verifies", grid.verify());
+    }
+
+    private static void testLevel7MultipleSeeds() {
+        System.out.println("\n-- Level 7 multiple seeds (10 seeds) --");
+        DifficultyLevel level = DifficultyLevel.LEVEL_7;
+
+        int successCount = 0;
+        for (int seed = 0; seed < 10; seed++) {
+            try {
+                PuzzleConfig config = level.buildConfig();
+                Random random = new Random(seed);
+                OperatorRegistry registry = new OperatorRegistry(config, random);
+                level.configureRegistry(registry);
+
+                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+                PuzzleGrid grid = gen.generate();
+                if (grid != null && grid.verify()) {
+                    successCount++;
+                }
+            } catch (Exception e) {
+                // Count as failure
+            }
+        }
+        assertTrue("Level 7 succeeds for all 10 seeds (" + successCount + "/10)",
+                successCount == 10);
     }
 }

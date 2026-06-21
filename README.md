@@ -13,7 +13,7 @@ Java-based generator for CrossMath / Crossmatch-style math puzzles on a 2D spars
 mkdir -p out
 javac -d out src/io/crossmath/engine/*.java
 
-# Run with difficulty level (0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6)
+# Run with difficulty level (0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7)
 java -cp out io.crossmath.engine.CrossMathMain --level 3 42
 
 # Shape mode
@@ -44,7 +44,7 @@ src/io/crossmath/engine/
   PuzzleShape.java         Arms + cell roles + intersection set
   ShapeGenerator.java      BFS random asymmetric shape growth
   EquationMask.java        Controls which equations are hidden
-  DifficultyLevel.java     12 education-grade presets (levels 0-6)
+  DifficultyLevel.java     14 education-grade presets (levels 0-7)
   DistractorGenerator.java Plausible wrong answer generation
   UniquenessChecker.java   Verifies puzzles have exactly one solution
   PuzzleJsonExporter.java  JSON serialization for frontend clients
@@ -54,7 +54,7 @@ src/io/crossmath/engine/
   SubtractOperator.java    -
   MultiplyOperator.java    x
   DivideOperator.java      /
-  CustomOperators.java     Min, Max, Avg, Exp, Sqrt
+  CustomOperators.java     Min, Max, Avg, Exp, Sqrt, Modulo, Log
   OperatorRegistry.java    Operator lookup and management
   BracketedPicker.java     Round-robin value selection
   CrossMathTest.java       Regression test suite
