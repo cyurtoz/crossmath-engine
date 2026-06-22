@@ -113,6 +113,12 @@ public class CrossMathTest {
         testLevel7ShapeMode();
         testLevel7MultipleSeeds();
 
+        // 16. DifficultyScorer
+        testDifficultyScorerMonotonic();
+        testDifficultyScorerShapeMode();
+        testDifficultyScorerBounds();
+        testDifficultyScorerJsonExport();
+
         System.out.println("\n=== Results ===");
         System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
 
@@ -1272,5 +1278,100 @@ public class CrossMathTest {
         }
         assertTrue("Level 7 succeeds for all 10 seeds (" + successCount + "/10)",
                 successCount == 10);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 16. DifficultyScorer
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static void testDifficultyScorerMonotonic() {
+        System.out.println("\n-- DifficultyScorer monotonic progression --");
+        DifficultyLevel[] levels = {
+                DifficultyLevel.LEVEL_0, DifficultyLevel.LEVEL_1,
+                DifficultyLevel.LEVEL_2, DifficultyLevel.LEVEL_3,
+                DifficultyLevel.LEVEL_4, DifficultyLevel.LEVEL_5,
+                DifficultyLevel.LEVEL_6, DifficultyLevel.LEVEL_7
+        };
+
+        double previousScore = -1;
+        boolean monotonic = true;
+        for (DifficultyLevel level : levels) {
+            Random random = new Random(42);
+            PuzzleConfig config = level.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(config, random);
+            level.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid grid = gen.generate();
+            EquationMask mask = level.buildMask(grid, random);
+
+            DifficultyScorer.Score score = DifficultyScorer.score(grid, mask, level);
+            if (score.total() < previousScore) {
+                monotonic = false;
+            }
+            previousScore = score.total();
+        }
+        assertTrue("Difficulty scores increase with level", monotonic);
+    }
+
+    private static void testDifficultyScorerShapeMode() {
+        System.out.println("\n-- DifficultyScorer shape mode --");
+        DifficultyLevel level = DifficultyLevel.LEVEL_4;
+        Random random = new Random(42);
+        PuzzleConfig config = level.buildConfig();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate(shapeGen);
+        EquationMask mask = level.buildMask(grid, random);
+
+        DifficultyScorer.Score score = DifficultyScorer.score(grid, mask, level);
+        assertTrue("Shape mode score > 0", score.total() > 0);
+        assertTrue("Shape mode score <= 100", score.total() <= 100);
+        assertTrue("Shape mode hiddenRatio in [0,1]",
+                score.hiddenRatio() >= 0 && score.hiddenRatio() <= 1);
+        assertTrue("Shape mode operatorComplexity in [0,1]",
+                score.operatorComplexity() >= 0 && score.operatorComplexity() <= 1);
+    }
+
+    private static void testDifficultyScorerBounds() {
+        System.out.println("\n-- DifficultyScorer bounds check --");
+        Random random = new Random(99);
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(20)
+                .minUsagePerOperator(0).build();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        registry.remove('*');
+        registry.remove('/');
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+
+        EquationMask allVisible = EquationMask.allVisible();
+        DifficultyScorer.Score lowScore = DifficultyScorer.score(grid, allVisible, DifficultyLevel.LEVEL_0);
+        assertTrue("All-visible score is low", lowScore.total() < 15);
+
+        EquationMask maxHide = EquationMask.random(config, config.matrixSize * config.equationsPerLine * 2 - 1, random);
+        DifficultyScorer.Score highScore = DifficultyScorer.score(grid, maxHide, DifficultyLevel.LEVEL_6);
+        assertTrue("Max-hidden score is high", highScore.total() > lowScore.total());
+    }
+
+    private static void testDifficultyScorerJsonExport() {
+        System.out.println("\n-- DifficultyScorer in JSON export --");
+        DifficultyLevel level = DifficultyLevel.LEVEL_3;
+        Random random = new Random(42);
+        PuzzleConfig config = level.buildConfig();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+        EquationMask mask = level.buildMask(grid, random, registry);
+
+        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
+        String json = exporter.exportJson();
+
+        assertTrue("JSON contains difficulty field", json.contains("\"difficulty\""));
+        assertTrue("JSON contains total score", json.contains("\"total\""));
+        assertTrue("JSON contains hiddenRatio", json.contains("\"hiddenRatio\""));
+        assertTrue("JSON contains operatorComplexity", json.contains("\"operatorComplexity\""));
     }
 }

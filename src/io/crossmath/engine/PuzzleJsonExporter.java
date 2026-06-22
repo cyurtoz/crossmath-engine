@@ -62,6 +62,8 @@ public class PuzzleJsonExporter {
         appendSolution(sb);
         sb.append(",\n");
         appendUniqueness(sb);
+        sb.append(",\n");
+        appendDifficultyScore(sb);
         sb.append("\n}");
         return sb.toString();
     }
@@ -69,6 +71,11 @@ public class PuzzleJsonExporter {
     private void appendUniqueness(StringBuilder sb) {
         boolean unique = UniquenessChecker.isUnique(grid, mask, registry);
         sb.append("  \"uniqueSolution\": ").append(unique);
+    }
+
+    private void appendDifficultyScore(StringBuilder sb) {
+        DifficultyScorer.Score score = DifficultyScorer.score(grid, mask, level);
+        sb.append("  \"difficulty\": ").append(score.toJson());
     }
 
     private void appendConfig(StringBuilder sb) {

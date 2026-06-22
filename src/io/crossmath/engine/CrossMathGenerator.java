@@ -457,6 +457,22 @@ public class CrossMathGenerator {
         return shuffled;
     }
 
+    /**
+     * Orders operators by ascending usage, but gives a bonus to rare/restrictive
+     * operators (Exp, Log, Sqrt, Modulo) so they get tried first when they have
+     * zero or low usage. This improves operator diversity in high-level puzzles.
+     */
+    private List<Operator> operatorsByAscendingUsageWithRarityBoost(Map<Character, Integer> usageCounts) {
+        List<Operator> sorted = registry.all();
+        Collections.shuffle(sorted, random);
+        sorted.sort(Comparator.comparingInt(op -> {
+            int usage = usageCounts.getOrDefault(op.symbol(), 0);
+            int priority = operatorSeedPriority(op);
+            return usage * 10 - priority;
+        }));
+        return sorted;
+    }
+
     // ── Usage counting ─────────────────────────────────────────────────────────
 
     private static void updateUsageCounts(Map<Character, Integer> usageCounts, Operator[] ops) {
@@ -521,9 +537,17 @@ public class CrossMathGenerator {
         List<GridCell> intersections = new ArrayList<>(shape.intersections());
         List<Operator> operators = registry.all();
 
+        // Prioritize rare operators (unary, high-constraint) for early intersections
+        List<Operator> seedOrder = new ArrayList<>(operators);
+        seedOrder.sort((a, b) -> {
+            int scoreA = operatorSeedPriority(a);
+            int scoreB = operatorSeedPriority(b);
+            return Integer.compare(scoreB, scoreA);
+        });
+
         for (int i = 0; i < intersections.size(); i++) {
             GridCell cell = intersections.get(i);
-            Operator targetOp = operators.get(i % operators.size());
+            Operator targetOp = seedOrder.get(i % seedOrder.size());
 
             int value = picker.next();
             int safetyLimit = 100;
@@ -543,6 +567,17 @@ public class CrossMathGenerator {
         }
 
         return grid;
+    }
+
+    private static int operatorSeedPriority(Operator op) {
+        return switch (op.symbol()) {
+            case 'L' -> 5;  // log: very restrictive domain
+            case '^' -> 4;  // exp: needs small base
+            case 'r' -> 3;  // sqrt: needs perfect squares
+            case '%' -> 2;  // modulo: needs left > right
+            case '/' -> 1;  // divide: needs exact divisibility
+            default  -> 0;
+        };
     }
 
     private boolean fillArm(PuzzleGrid grid, EquationArm arm,
@@ -566,7 +601,7 @@ public class CrossMathGenerator {
                 running = result;
             } else {
                 boolean filled = false;
-                for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+                for (Operator op : operatorsByAscendingUsageWithRarityBoost(usageCounts)) {
                     List<Integer> rights = op.validRightOperands(running, config, random);
                     for (int rightValue : rights) {
                         int result = op.apply(running, rightValue, config);
