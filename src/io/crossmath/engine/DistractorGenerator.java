@@ -13,14 +13,16 @@ import java.util.Set;
  * <p>Distractors are near-miss values that look plausible but are incorrect.
  * The strategy varies by difficulty level:
  * <ul>
- *   <li>Low levels: ±1 from correct answer</li>
- *   <li>Mid levels: off-by-one, carry mistakes, reversed operations</li>
- *   <li>High levels: factor confusion, multi-step traps, logic traps</li>
+ *   <li>Low levels: ±1 from correct answer, swapped operands</li>
+ *   <li>Mid levels: inverse confusion (a+b vs a-b), carry mistakes</li>
+ *   <li>High levels: table confusion, factor confusion, multi-step traps</li>
  * </ul>
  *
  * <p>Each hidden cell gets exactly {@code optionCount} choices: 1 correct + (optionCount-1) distractors.
  */
 public class DistractorGenerator {
+
+    public record EquationContext(int left, int right, char op) {}
 
     private final PuzzleConfig config;
     private final Random random;
@@ -31,11 +33,19 @@ public class DistractorGenerator {
     }
 
     public List<Integer> generateOptions(int correctAnswer, int optionCount, DifficultyLevel level) {
+        return generateOptions(correctAnswer, optionCount, level, null);
+    }
+
+    public List<Integer> generateOptions(int correctAnswer, int optionCount,
+                                         DifficultyLevel level, EquationContext ctx) {
         DifficultyLevel effectiveLevel = level != null ? level : DifficultyLevel.LEVEL_4;
         Set<Integer> distractors = new LinkedHashSet<>();
 
         addNearMiss(distractors, correctAnswer, effectiveLevel);
         addOperationConfusion(distractors, correctAnswer, effectiveLevel);
+        if (ctx != null) {
+            addEquationAwareDistractions(distractors, correctAnswer, effectiveLevel, ctx);
+        }
         addRandomNear(distractors, correctAnswer, effectiveLevel);
 
         distractors.remove(correctAnswer);
@@ -133,6 +143,65 @@ public class DistractorGenerator {
             }
             int swapOp = correct > 10 ? correct - (correct % 10) + (correct / 10 % 10) : correct + 7;
             distractors.add(swapOp);
+        }
+    }
+
+    private void addEquationAwareDistractions(Set<Integer> distractors, int correct,
+                                               DifficultyLevel effectiveLevel, EquationContext ctx) {
+        int left = ctx.left();
+        int right = ctx.right();
+        char op = ctx.op();
+
+        // Level 1+: swapped operands (grades.txt: "swapped numbers")
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_1.ordinal()) {
+            if (left != right) {
+                distractors.add(right);
+                distractors.add(left);
+            }
+        }
+
+        // Level 1.5-2.5: inverse confusion (grades.txt: "inverse confusion (a+b vs a-b)")
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_1_5.ordinal()
+                && effectiveLevel.ordinal() <= DifficultyLevel.LEVEL_2_5.ordinal()) {
+            if (op == '+' && left > right) {
+                distractors.add(left - right);
+            } else if (op == '-') {
+                int sum = left + right;
+                if (sum <= config.maxCellValue) distractors.add(sum);
+            }
+        }
+
+        // Level 3+: table confusion (grades.txt: "table confusion (e.g., 6×3 vs 5×3)")
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_3.ordinal()) {
+            if (op == '*') {
+                if (left >= 2) distractors.add((left - 1) * right);
+                if ((left + 1) * right <= config.maxCellValue) distractors.add((left + 1) * right);
+                if (right >= 2) distractors.add(left * (right - 1));
+                if (left * (right + 1) <= config.maxCellValue) distractors.add(left * (right + 1));
+            }
+            if (op == '/') {
+                if (left > 0 && right > 0) {
+                    int nearQuotient = left / right;
+                    distractors.add(nearQuotient + 1);
+                    if (nearQuotient > 1) distractors.add(nearQuotient - 1);
+                    distractors.add(right);
+                }
+            }
+        }
+
+        // Level 4+: operation swap confusion
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_4.ordinal()) {
+            if (op == '*' && right != 0) {
+                distractors.add(left + right);
+            } else if (op == '+' && left >= 2 && right >= 2
+                       && (long) left * right <= config.maxCellValue) {
+                distractors.add(left * right);
+            }
+            if (op == '/' && left >= right) {
+                distractors.add(left - right);
+            } else if (op == '-' && right != 0 && left % right == 0) {
+                distractors.add(left / right);
+            }
         }
     }
 

@@ -233,6 +233,46 @@ public class PuzzleJsonExporter {
         }
     }
 
+    private DistractorGenerator.EquationContext findEquationContext(int row, int col) {
+        if (grid.isShapeMode()) {
+            GridCell target = new GridCell(row, col);
+            for (EquationArm arm : grid.shape().arms()) {
+                List<GridCell> operands = arm.operandCells();
+                List<Operator> ops = grid.getArmOperators(arm);
+                for (int i = 0; i < ops.size(); i++) {
+                    int leftVal = grid.getCellValue(operands.get(i));
+                    int rightVal = grid.getCellValue(operands.get(i + 1));
+                    int result = ops.get(i).apply(leftVal, rightVal, grid.config);
+                    if (operands.get(i).equals(target) || operands.get(i + 1).equals(target)
+                            || arm.resultCell().equals(target)) {
+                        return new DistractorGenerator.EquationContext(leftVal, rightVal, ops.get(i).symbol());
+                    }
+                }
+            }
+            return null;
+        }
+
+        for (int eq = 0; eq < grid.config.equationsPerLine; eq++) {
+            int leftCol = eq * 2;
+            if (col >= leftCol && col <= leftCol + 2) {
+                return new DistractorGenerator.EquationContext(
+                    grid.numbers[row][leftCol],
+                    grid.numbers[row][leftCol + 1],
+                    grid.horizontalOperators[row][eq].symbol());
+            }
+        }
+        for (int eq = 0; eq < grid.config.equationsPerLine; eq++) {
+            int topRow = eq * 2;
+            if (row >= topRow && row <= topRow + 2) {
+                return new DistractorGenerator.EquationContext(
+                    grid.numbers[topRow][col],
+                    grid.numbers[topRow + 1][col],
+                    grid.verticalOperators[col][eq].symbol());
+            }
+        }
+        return null;
+    }
+
     private void appendPuzzle(StringBuilder sb) {
         sb.append("  \"puzzle\": {\n");
         sb.append("    \"hiddenCells\": [\n");
@@ -248,7 +288,8 @@ public class PuzzleJsonExporter {
             int col = cell[1];
             int value = grid.isShapeMode() ? grid.getCellValue(new GridCell(row, col))
                                             : grid.numbers[row][col];
-            List<Integer> options = distractorGen.generateOptions(value, optionCount, level);
+            DistractorGenerator.EquationContext ctx = findEquationContext(row, col);
+            List<Integer> options = distractorGen.generateOptions(value, optionCount, level, ctx);
 
             sb.append("      {\"row\": ").append(row)
               .append(", \"col\": ").append(col)

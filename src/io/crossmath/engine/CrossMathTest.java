@@ -77,6 +77,7 @@ public class CrossMathTest {
         testDistractorGeneration();
         testDistractorContainsCorrectAnswer();
         testDistractorAllWithinBounds();
+        testEquationAwareDistractors();
 
         // 13. Multiple seeds stability (20 seeds per config)
         testMultipleSeedsFixed5x5();
@@ -798,6 +799,52 @@ public class CrossMathTest {
             }
         }
         assertTrue("All distractors within [minCellValue, maxCellValue]", allInBounds);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 12b. Equation-aware distractors
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static void testEquationAwareDistractors() {
+        System.out.println("\n-- Equation-aware distractors --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(100)
+                .minUsagePerOperator(0).build();
+
+        // Level 1: swapped numbers — operands should appear as distractors
+        DistractorGenerator gen1 = new DistractorGenerator(config, new Random(42));
+        var ctx1 = new DistractorGenerator.EquationContext(3, 5, '+');
+        List<Integer> opts1 = gen1.generateOptions(8, 3, DifficultyLevel.LEVEL_1, ctx1);
+        assertTrue("Level 1 swapped: options contain correct answer 8", opts1.contains(8));
+        boolean hasSwap = opts1.contains(3) || opts1.contains(5);
+        assertTrue("Level 1 swapped: operand appears as distractor", hasSwap);
+
+        // Level 1.5: inverse confusion — a+b vs a-b
+        DistractorGenerator gen2 = new DistractorGenerator(config, new Random(43));
+        var ctx2 = new DistractorGenerator.EquationContext(7, 3, '+');
+        List<Integer> opts2 = gen2.generateOptions(10, 4, DifficultyLevel.LEVEL_1_5, ctx2);
+        assertTrue("Level 1.5 inverse: options contain correct answer 10", opts2.contains(10));
+
+        // Level 3: table confusion for multiplication (use enough options for table values to survive)
+        DistractorGenerator gen3 = new DistractorGenerator(config, new Random(44));
+        var ctx3 = new DistractorGenerator.EquationContext(6, 3, '*');
+        List<Integer> opts3 = gen3.generateOptions(18, 6, DifficultyLevel.LEVEL_3, ctx3);
+        assertTrue("Level 3 table: options contain correct answer 18", opts3.contains(18));
+        boolean hasTableConfusion = opts3.contains(15) || opts3.contains(21)
+                                 || opts3.contains(12) || opts3.contains(24);
+        assertTrue("Level 3 table confusion: adjacent product appears", hasTableConfusion);
+
+        // Level 4: operation swap confusion — multiplication vs addition
+        DistractorGenerator gen4 = new DistractorGenerator(config, new Random(45));
+        var ctx4 = new DistractorGenerator.EquationContext(5, 4, '*');
+        List<Integer> opts4 = gen4.generateOptions(20, 4, DifficultyLevel.LEVEL_4, ctx4);
+        assertTrue("Level 4 op swap: options contain correct answer 20", opts4.contains(20));
+
+        // Equation context with division
+        DistractorGenerator gen5 = new DistractorGenerator(config, new Random(46));
+        var ctx5 = new DistractorGenerator.EquationContext(12, 3, '/');
+        List<Integer> opts5 = gen5.generateOptions(4, 4, DifficultyLevel.LEVEL_4, ctx5);
+        assertTrue("Level 4 division: options contain correct answer 4", opts5.contains(4));
     }
 
     // ══════════════════════════════════════════════════════════════════════════
