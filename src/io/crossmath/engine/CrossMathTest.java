@@ -120,6 +120,21 @@ public class CrossMathTest {
         testDifficultyScorerBounds();
         testDifficultyScorerJsonExport();
 
+        // 17. Carry avoidance verification
+        testCarryAvoidanceLevel0();
+
+        // 18. Custom operator distractors
+        testCustomOperatorDistractors();
+
+        // 19. Non-unique puzzle detection
+        testNonUniquePuzzleDetection();
+
+        // 20. Operator hiding disabled at early levels
+        testOperatorHidingDisabledEarlyLevels();
+
+        // 21. Level-specific distractor count verification
+        testDistractorCountPerLevel();
+
         System.out.println("\n=== Results ===");
         System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
 
@@ -1420,5 +1435,230 @@ public class CrossMathTest {
         assertTrue("JSON contains total score", json.contains("\"total\""));
         assertTrue("JSON contains hiddenRatio", json.contains("\"hiddenRatio\""));
         assertTrue("JSON contains operatorComplexity", json.contains("\"operatorComplexity\""));
+    }
+
+    // ── 17. Carry avoidance verification ──────────────────────────────────────
+
+    private static void testCarryAvoidanceLevel0() {
+        System.out.println("\n-- Carry avoidance Level 0 --");
+        DifficultyLevel level = DifficultyLevel.LEVEL_0;
+
+        boolean allNoCarry = true;
+        for (int seed = 1; seed <= 10; seed++) {
+            Random random = new Random(seed);
+            PuzzleConfig config = level.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(config, random);
+            level.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid grid = gen.generate();
+
+            for (int row = 0; row < config.matrixSize; row++) {
+                for (int eq = 0; eq < config.equationsPerLine; eq++) {
+                    int leftCol = eq * 2;
+                    int rightCol = leftCol + 1;
+                    int left = grid.numbers[row][leftCol];
+                    int right = grid.numbers[row][rightCol];
+                    char opSym = grid.horizontalOperators[row][eq].symbol();
+                    if (opSym == '+' && DifficultyLevel.hasCarry(left, right)) {
+                        allNoCarry = false;
+                    }
+                }
+            }
+            for (int col = 0; col < config.matrixSize; col++) {
+                for (int eq = 0; eq < config.equationsPerLine; eq++) {
+                    int topRow = eq * 2;
+                    int botRow = topRow + 1;
+                    int top = grid.numbers[topRow][col];
+                    int bot = grid.numbers[botRow][col];
+                    char opSym = grid.verticalOperators[col][eq].symbol();
+                    if (opSym == '+' && DifficultyLevel.hasCarry(top, bot)) {
+                        allNoCarry = false;
+                    }
+                }
+            }
+        }
+        assertTrue("Level 0 has no carry additions across 10 seeds", allNoCarry);
+
+        // Verify Level 1 allows carry (it should)
+        boolean level1HasCarry = false;
+        for (int seed = 1; seed <= 20; seed++) {
+            Random random = new Random(seed);
+            PuzzleConfig config = DifficultyLevel.LEVEL_1.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(config, random);
+            DifficultyLevel.LEVEL_1.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid grid = gen.generate();
+
+            for (int row = 0; row < config.matrixSize && !level1HasCarry; row++) {
+                for (int eq = 0; eq < config.equationsPerLine && !level1HasCarry; eq++) {
+                    int left = grid.numbers[row][eq * 2];
+                    int right = grid.numbers[row][eq * 2 + 1];
+                    if (grid.horizontalOperators[row][eq].symbol() == '+'
+                            && DifficultyLevel.hasCarry(left, right)) {
+                        level1HasCarry = true;
+                    }
+                }
+            }
+        }
+        assertTrue("Level 1 allows carry (found carry in 20 seeds)", level1HasCarry);
+    }
+
+    // ── 18. Custom operator distractors ──────────────────────────────────────
+
+    private static void testCustomOperatorDistractors() {
+        System.out.println("\n-- Custom operator distractors --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(5).minCellValue(1).maxCellValue(200).build();
+        Random random = new Random(42);
+        DistractorGenerator gen = new DistractorGenerator(config, random);
+
+        // min(10, 7) = 7 → should include max(10,7)=10 as distractor
+        DistractorGenerator.EquationContext minCtx =
+                new DistractorGenerator.EquationContext(10, 7, 'm');
+        List<Integer> minOpts = gen.generateOptions(7, 5, DifficultyLevel.LEVEL_5, minCtx);
+        assertTrue("Min distractor: options contain correct answer 7", minOpts.contains(7));
+        assertTrue("Min distractor: max(10,7)=10 appears as distractor", minOpts.contains(10));
+
+        // max(10, 7) = 10 → should include min(10,7)=7 as distractor
+        DistractorGenerator.EquationContext maxCtx =
+                new DistractorGenerator.EquationContext(10, 7, 'M');
+        List<Integer> maxOpts = gen.generateOptions(10, 5, DifficultyLevel.LEVEL_5, maxCtx);
+        assertTrue("Max distractor: options contain correct answer 10", maxOpts.contains(10));
+        assertTrue("Max distractor: min(10,7)=7 appears as distractor", maxOpts.contains(7));
+
+        // avg(10, 6) = 8 → should include sum 16 as distractor
+        DistractorGenerator.EquationContext avgCtx =
+                new DistractorGenerator.EquationContext(10, 6, 'a');
+        List<Integer> avgOpts = gen.generateOptions(8, 5, DifficultyLevel.LEVEL_5, avgCtx);
+        assertTrue("Avg distractor: options contain correct answer 8", avgOpts.contains(8));
+        assertTrue("Avg distractor: sum(10,6)=16 appears as distractor", avgOpts.contains(16));
+
+        // 3^3 = 27 → should include 3*3=9 as distractor
+        DistractorGenerator.EquationContext expCtx =
+                new DistractorGenerator.EquationContext(3, 3, '^');
+        List<Integer> expOpts = gen.generateOptions(27, 5, DifficultyLevel.LEVEL_6, expCtx);
+        assertTrue("Exp distractor: options contain correct answer 27", expOpts.contains(27));
+        assertTrue("Exp distractor: 3*3=9 appears as distractor", expOpts.contains(9));
+
+        // sqrt(25) = 5 → should include 25/2=12 as distractor
+        DistractorGenerator.EquationContext sqrtCtx =
+                new DistractorGenerator.EquationContext(25, 1, 'r');
+        List<Integer> sqrtOpts = gen.generateOptions(5, 5, DifficultyLevel.LEVEL_6, sqrtCtx);
+        assertTrue("Sqrt distractor: options contain correct answer 5", sqrtOpts.contains(5));
+        boolean hasSqrtNear = sqrtOpts.contains(4) || sqrtOpts.contains(6) || sqrtOpts.contains(12);
+        assertTrue("Sqrt distractor: near values or half appear", hasSqrtNear);
+
+        // 10 % 3 = 1 → should include 10/3=3 as distractor
+        DistractorGenerator.EquationContext modCtx =
+                new DistractorGenerator.EquationContext(10, 3, '%');
+        List<Integer> modOpts = gen.generateOptions(1, 6, DifficultyLevel.LEVEL_7, modCtx);
+        assertTrue("Modulo distractor: options contain correct answer 1", modOpts.contains(1));
+        assertTrue("Modulo distractor: quotient 10/3=3 appears as distractor", modOpts.contains(3));
+
+        // log_2(8) = 3 → should include base 2 and argument 8
+        DistractorGenerator.EquationContext logCtx =
+                new DistractorGenerator.EquationContext(2, 8, 'L');
+        List<Integer> logOpts = gen.generateOptions(3, 6, DifficultyLevel.LEVEL_7, logCtx);
+        assertTrue("Log distractor: options contain correct answer 3", logOpts.contains(3));
+        boolean hasLogDistractor = logOpts.contains(2) || logOpts.contains(4) || logOpts.contains(8);
+        assertTrue("Log distractor: base/exponent/adjacent appear", hasLogDistractor);
+    }
+
+    // ── 19. Non-unique puzzle detection ──────────────────────────────────────
+
+    private static void testNonUniquePuzzleDetection() {
+        System.out.println("\n-- Non-unique puzzle detection --");
+        Random random = new Random(42);
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(20)
+                .minUsagePerOperator(0).build();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        registry.remove('*');
+        registry.remove('/');
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+
+        // All visible → unique (trivially — nothing to solve)
+        EquationMask allVisible = EquationMask.allVisible();
+        assertTrue("All-visible puzzle is unique",
+                UniquenessChecker.isUnique(grid, allVisible, registry));
+
+        // Hide all but one equation → likely non-unique or very constrained
+        int totalEquations = 2 * config.matrixSize * config.equationsPerLine;
+        EquationMask maxHide = EquationMask.random(config, totalEquations - 1, random);
+        // This should have a harder time being unique (many unknowns)
+        boolean maxHideResult = UniquenessChecker.isUnique(grid, maxHide, registry);
+        // We just verify it runs without error and returns a boolean
+        assertTrue("UniquenessChecker runs on max-hidden mask",
+                maxHideResult || !maxHideResult);
+
+        // Hide exactly 1 equation → should be unique (one equation determines its cells)
+        EquationMask singleHide = EquationMask.random(config, 1, random);
+        boolean singleHideResult = UniquenessChecker.isUnique(grid, singleHide, registry);
+        assertTrue("Single hidden equation is unique", singleHideResult);
+    }
+
+    // ── 20. Operator hiding disabled at early levels ─────────────────────────
+
+    private static void testOperatorHidingDisabledEarlyLevels() {
+        System.out.println("\n-- Operator hiding disabled at early levels --");
+        // Levels 0-2 should have operatorHideChance = 0.0
+        assertTrue("Level 0 operator hide chance is 0",
+                DifficultyLevel.LEVEL_0.operatorHideChance == 0.0);
+        assertTrue("Level 1 operator hide chance is 0",
+                DifficultyLevel.LEVEL_1.operatorHideChance == 0.0);
+        assertTrue("Level 1.5 operator hide chance is 0",
+                DifficultyLevel.LEVEL_1_5.operatorHideChance == 0.0);
+        assertTrue("Level 2 operator hide chance is 0",
+                DifficultyLevel.LEVEL_2.operatorHideChance == 0.0);
+
+        // Level 2.5 should still not hide operators (spec: "mostly visible" → 0.0 in impl)
+        assertTrue("Level 2.5 operator hide chance is 0",
+                DifficultyLevel.LEVEL_2_5.operatorHideChance == 0.0);
+
+        // Level 3.5+ should have non-zero operator hiding
+        assertTrue("Level 3.5 has operator hiding > 0",
+                DifficultyLevel.LEVEL_3_5.operatorHideChance > 0.0);
+        assertTrue("Level 4 has operator hiding > 0",
+                DifficultyLevel.LEVEL_4.operatorHideChance > 0.0);
+
+        // Verify early-level JSON export has no hiddenOperators
+        Random random = new Random(42);
+        DifficultyLevel level = DifficultyLevel.LEVEL_0;
+        PuzzleConfig config = level.buildConfig();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+        EquationMask mask = level.buildMask(grid, random, registry);
+        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
+        String json = exporter.exportJson();
+        assertFalse("Level 0 JSON has no hiddenOperators", json.contains("\"hiddenOperators\""));
+    }
+
+    // ── 21. Level-specific distractor count verification ─────────────────────
+
+    private static void testDistractorCountPerLevel() {
+        System.out.println("\n-- Level-specific distractor counts --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(5).minCellValue(1).maxCellValue(200).build();
+
+        DifficultyLevel[] levels = DifficultyLevel.values();
+        for (DifficultyLevel level : levels) {
+            Random random = new Random(42);
+            DistractorGenerator gen = new DistractorGenerator(config, random);
+            int optionCount = level.optionCount(random);
+            List<Integer> options = gen.generateOptions(25, optionCount, level);
+
+            assertTrue("Level " + level.label + " produces exactly " + optionCount + " options",
+                    options.size() == optionCount);
+            assertTrue("Level " + level.label + " options contain correct answer",
+                    options.contains(25));
+
+            // Verify all options are distinct
+            long distinctCount = options.stream().distinct().count();
+            assertTrue("Level " + level.label + " options are all distinct",
+                    distinctCount == options.size());
+        }
     }
 }

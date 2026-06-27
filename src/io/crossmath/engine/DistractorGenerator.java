@@ -39,30 +39,42 @@ public class DistractorGenerator {
     public List<Integer> generateOptions(int correctAnswer, int optionCount,
                                          DifficultyLevel level, EquationContext ctx) {
         DifficultyLevel effectiveLevel = level != null ? level : DifficultyLevel.LEVEL_4;
-        Set<Integer> distractors = new LinkedHashSet<>();
 
-        addNearMiss(distractors, correctAnswer, effectiveLevel);
-        addOperationConfusion(distractors, correctAnswer, effectiveLevel);
+        Set<Integer> eqAware = new LinkedHashSet<>();
         if (ctx != null) {
-            addEquationAwareDistractions(distractors, correctAnswer, effectiveLevel, ctx);
+            addEquationAwareDistractions(eqAware, correctAnswer, effectiveLevel, ctx);
+            eqAware.remove(correctAnswer);
+            eqAware.removeIf(d -> d < config.minCellValue || d > config.maxCellValue);
         }
-        addRandomNear(distractors, correctAnswer, effectiveLevel);
 
-        distractors.remove(correctAnswer);
-        distractors.removeIf(d -> d < config.minCellValue || d > config.maxCellValue);
+        Set<Integer> general = new LinkedHashSet<>();
+        addNearMiss(general, correctAnswer, effectiveLevel);
+        addOperationConfusion(general, correctAnswer, effectiveLevel);
+        addRandomNear(general, correctAnswer, effectiveLevel);
+        general.remove(correctAnswer);
+        general.removeIf(d -> d < config.minCellValue || d > config.maxCellValue);
+        general.removeAll(eqAware);
 
-        List<Integer> distractorList = new ArrayList<>(distractors);
-        Collections.shuffle(distractorList, random);
+        List<Integer> eqAwareList = new ArrayList<>(eqAware);
+        Collections.shuffle(eqAwareList, random);
+        List<Integer> generalList = new ArrayList<>(general);
+        Collections.shuffle(generalList, random);
 
         int needed = optionCount - 1;
+        List<Integer> distractorList = new ArrayList<>(needed);
+        for (int d : eqAwareList) {
+            if (distractorList.size() >= needed) break;
+            distractorList.add(d);
+        }
+        for (int d : generalList) {
+            if (distractorList.size() >= needed) break;
+            distractorList.add(d);
+        }
         while (distractorList.size() < needed) {
             int fallback = generateFallback(correctAnswer, distractorList);
             if (fallback != correctAnswer && fallback >= config.minCellValue && fallback <= config.maxCellValue) {
                 distractorList.add(fallback);
             }
-        }
-        if (distractorList.size() > needed) {
-            distractorList = distractorList.subList(0, needed);
         }
 
         List<Integer> options = new ArrayList<>(distractorList);
@@ -201,6 +213,70 @@ public class DistractorGenerator {
                 distractors.add(left - right);
             } else if (op == '-' && right != 0 && left % right == 0) {
                 distractors.add(left / right);
+            }
+        }
+
+        // Level 5+: custom operator confusion (avg, min, max)
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_5.ordinal()) {
+            if (op == 'm') {
+                // min confused with max
+                distractors.add(Math.max(left, right));
+                distractors.add(Math.abs(left - right));
+            } else if (op == 'M') {
+                // max confused with min
+                distractors.add(Math.min(left, right));
+                int sum = left + right;
+                if (sum <= config.maxCellValue) distractors.add(sum);
+            } else if (op == 'a') {
+                // avg confused with sum, individual operands, half-operand
+                int sum = left + right;
+                if (sum <= config.maxCellValue) distractors.add(sum);
+                distractors.add(left);
+                distractors.add(right);
+                distractors.add(Math.max(1, (left + right + 1) / 2));
+            }
+        }
+
+        // Level 6+: advanced operator confusion (exp, sqrt)
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_6.ordinal()) {
+            if (op == '^') {
+                // exp confused with multiplication
+                int product = left * right;
+                if (product > 0 && product <= config.maxCellValue) distractors.add(product);
+                // adjacent powers
+                long prevPower = 1;
+                for (int i = 0; i < right - 1 && prevPower <= config.maxCellValue; i++) prevPower *= left;
+                if (prevPower > 0 && prevPower <= config.maxCellValue) distractors.add((int) prevPower);
+                long nextPower = 1;
+                for (int i = 0; i < right + 1 && nextPower <= config.maxCellValue; i++) nextPower *= left;
+                if (nextPower > 0 && nextPower <= config.maxCellValue) distractors.add((int) nextPower);
+            } else if (op == 'r') {
+                // sqrt confused with half, or square root of adjacent values
+                distractors.add(Math.max(1, left / 2));
+                int sqrtFloor = (int) Math.sqrt(left);
+                if (sqrtFloor > 0) distractors.add(sqrtFloor + 1);
+                if (sqrtFloor > 1) distractors.add(sqrtFloor - 1);
+            }
+        }
+
+        // Level 7: modulo and log confusion
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_7.ordinal()) {
+            if (op == '%') {
+                // modulo confused with division quotient
+                if (right > 0) distractors.add(left / right);
+                distractors.add(right);
+                // adjacent remainders
+                if (right > 0) {
+                    int rem = left % right;
+                    if (rem + 1 <= config.maxCellValue) distractors.add(rem + 1);
+                    if (rem - 1 >= config.minCellValue) distractors.add(rem - 1);
+                }
+            } else if (op == 'L') {
+                // log confused with base/exponent swap, adjacent exponents
+                distractors.add(left);
+                distractors.add(right);
+                if (correct + 1 <= config.maxCellValue) distractors.add(correct + 1);
+                if (correct - 1 >= config.minCellValue) distractors.add(correct - 1);
             }
         }
     }
