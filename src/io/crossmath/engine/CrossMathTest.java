@@ -135,6 +135,11 @@ public class CrossMathTest {
         // 21. Level-specific distractor count verification
         testDistractorCountPerLevel();
 
+        // 22. Spec-aligned hiding parameters
+        testResultHidingMostlyVisibleLevels();
+        testOperatorHidingSpecAlignment();
+        testLevel3AvoidLargeProducts();
+
         System.out.println("\n=== Results ===");
         System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
 
@@ -1659,6 +1664,100 @@ public class CrossMathTest {
             long distinctCount = options.stream().distinct().count();
             assertTrue("Level " + level.label + " options are all distinct",
                     distinctCount == options.size());
+        }
+    }
+
+    // ── 22. Spec-aligned hiding parameters ──────────────────────────────────
+
+    private static void testResultHidingMostlyVisibleLevels() {
+        System.out.println("\n-- Result hiding at 'mostly visible' levels (1, 1.5, 2) --");
+        assertTrue("Level 1 resultHideChance is 0.1",
+                DifficultyLevel.LEVEL_1.resultHideChance == 0.1);
+        assertTrue("Level 1.5 resultHideChance is 0.1",
+                DifficultyLevel.LEVEL_1_5.resultHideChance == 0.1);
+        assertTrue("Level 2 resultHideChance is 0.1",
+                DifficultyLevel.LEVEL_2.resultHideChance == 0.1);
+        assertTrue("Level 0 resultHideChance is still 0 (always visible)",
+                DifficultyLevel.LEVEL_0.resultHideChance == 0.0);
+
+        // Verify levels 1, 1.5, 2 still generate and verify correctly
+        for (DifficultyLevel level : new DifficultyLevel[]{
+                DifficultyLevel.LEVEL_1, DifficultyLevel.LEVEL_1_5, DifficultyLevel.LEVEL_2}) {
+            Random random = new Random(42);
+            PuzzleConfig config = level.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(config, random);
+            level.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid grid = gen.generate();
+            assertTrue("Level " + level.label + " grid verifies with new result hiding",
+                    grid.verify());
+        }
+    }
+
+    private static void testOperatorHidingSpecAlignment() {
+        System.out.println("\n-- Operator/result hiding spec alignment --");
+        assertTrue("Level 4 operatorHideChance is 0.3 (sometimes hidden)",
+                DifficultyLevel.LEVEL_4.operatorHideChance == 0.3);
+        assertTrue("Level 4.5 resultHideChance is 0.8 (mostly hidden)",
+                DifficultyLevel.LEVEL_4_5.resultHideChance == 0.8);
+        assertTrue("Level 5 operatorHideChance is 0.5 (partially hidden)",
+                DifficultyLevel.LEVEL_5.operatorHideChance == 0.5);
+
+        // Verify JSON export works correctly with updated hiding params
+        Random random = new Random(42);
+        DifficultyLevel level = DifficultyLevel.LEVEL_4;
+        PuzzleConfig config = level.buildConfig();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+        EquationMask mask = level.buildMask(grid, random, registry);
+        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
+        String json = exporter.exportJson();
+        assertTrue("Level 4 JSON export with updated hiding succeeds",
+                json.contains("\"level\"") && json.contains("\"puzzle\""));
+    }
+
+    private static void testLevel3AvoidLargeProducts() {
+        System.out.println("\n-- Level 3 avoids large products --");
+        PuzzleConfig config = DifficultyLevel.LEVEL_3.buildConfig();
+        assertTrue("Level 3 maxMultiplyResult is 30",
+                config.maxMultiplyResult == 30);
+        assertTrue("Level 3.5 maxMultiplyResult equals maxCellValue (unrestricted)",
+                DifficultyLevel.LEVEL_3_5.buildConfig().maxMultiplyResult == 50);
+        assertTrue("Level 4 maxMultiplyResult equals maxCellValue (unrestricted)",
+                DifficultyLevel.LEVEL_4.buildConfig().maxMultiplyResult == 100);
+
+        // Verify Level 3 multiply results never exceed 30 across multiple seeds
+        for (int seed = 0; seed < 20; seed++) {
+            Random random = new Random(seed);
+            DifficultyLevel level = DifficultyLevel.LEVEL_3;
+            PuzzleConfig cfg = level.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(cfg, random);
+            level.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(cfg, registry, random);
+            PuzzleGrid grid = gen.generate();
+            assertTrue("Level 3 seed " + seed + " verifies", grid.verify());
+
+            // Check all horizontal equations for multiply results
+            for (int row = 0; row < cfg.matrixSize; row++) {
+                for (int eq = 0; eq < cfg.equationsPerLine; eq++) {
+                    if (grid.horizontalOperators[row][eq].symbol() == '*') {
+                        int result = grid.numbers[row][eq * 2 + 2];
+                        assertTrue("Level 3 seed " + seed + " multiply result " + result + " <= 30",
+                                result <= 30);
+                    }
+                }
+            }
+            for (int col = 0; col < cfg.matrixSize; col++) {
+                for (int eq = 0; eq < cfg.equationsPerLine; eq++) {
+                    if (grid.verticalOperators[col][eq].symbol() == '*') {
+                        int result = grid.numbers[eq * 2 + 2][col];
+                        assertTrue("Level 3 seed " + seed + " vertical multiply result " + result + " <= 30",
+                                result <= 30);
+                    }
+                }
+            }
         }
     }
 }

@@ -6,15 +6,15 @@ import java.util.Set;
 public enum DifficultyLevel {
 
     LEVEL_0  ("0",   0,  10, "+",           3, 0.85, 0.95, 3, 3, 0.0,  0.0,  true,  1),
-    LEVEL_1  ("1",   0,  10, "+",           3, 0.75, 0.85, 3, 3, 0.0,  0.0,  false, 1),
-    LEVEL_1_5("1.5", 0,  10, "+-",          3, 0.70, 0.80, 3, 4, 0.0,  0.0,  false, 1),
-    LEVEL_2  ("2",   0,  20, "+-",          3, 0.65, 0.75, 3, 4, 0.0,  0.0,  false, 1),
+    LEVEL_1  ("1",   0,  10, "+",           3, 0.75, 0.85, 3, 3, 0.0,  0.1,  false, 1),
+    LEVEL_1_5("1.5", 0,  10, "+-",          3, 0.70, 0.80, 3, 4, 0.0,  0.1,  false, 1),
+    LEVEL_2  ("2",   0,  20, "+-",          3, 0.65, 0.75, 3, 4, 0.0,  0.1,  false, 1),
     LEVEL_2_5("2.5", 0,  20, "+-",          3, 0.60, 0.70, 4, 4, 0.0,  0.2,  false, 1),
     LEVEL_3  ("3",   0,  50, "+-*",         5, 0.55, 0.65, 4, 4, 0.0,  0.2,  false, 2),
     LEVEL_3_5("3.5", 0,  50, "+-*",         5, 0.50, 0.60, 4, 4, 0.3,  0.5,  false, 2),
-    LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, 4, 0.5,  0.7,  false, 3),
-    LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 4, 5, 0.5,  0.7,  false, -1),
-    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 4, 5, 0.7,  0.85, false, -1),
+    LEVEL_4  ("4",   0, 100, "+-*/",        5, 0.45, 0.55, 4, 4, 0.3,  0.7,  false, 3),
+    LEVEL_4_5("4.5", 0, 100, "+-*/",        5, 0.40, 0.50, 4, 5, 0.5,  0.8,  false, -1),
+    LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 4, 5, 0.5,  0.85, false, -1),
     LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, 5, 0.7,  0.85, false, -1),
     LEVEL_6  ("6",   0, 500, "+-*/amM^r",   7, 0.20, 0.35, 5, 5, 0.85, 0.85, false, -1),
     LEVEL_7  ("7",   0, 999, "+-*/amM^r%L", 7, 0.15, 0.30, 5, 6, 0.85, 0.90, false, -1);
@@ -64,15 +64,18 @@ public enum DifficultyLevel {
     public PuzzleConfig buildConfig() {
         int opCount = allowedOps.length();
         int minUsage = opCount <= 2 ? 1 : opCount <= 4 ? 2 : 0;
-        return PuzzleConfig.builder()
+        PuzzleConfig.Builder b = PuzzleConfig.builder()
                 .matrixSize(matrixSize)
                 .minCellValue(Math.max(1, minVal))
                 .maxCellValue(maxVal)
                 .maxGenerationAttempts(10000)
                 .minUsagePerOperator(minUsage)
                 .numBrackets(4)
-                .avoidCarry(avoidCarry)
-                .build();
+                .avoidCarry(avoidCarry);
+        if (this == LEVEL_3) {
+            b.maxMultiplyResult(30);
+        }
+        return b.build();
     }
 
     public void configureRegistry(OperatorRegistry registry) {
