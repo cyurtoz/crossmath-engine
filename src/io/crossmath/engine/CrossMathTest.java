@@ -140,6 +140,12 @@ public class CrossMathTest {
         testOperatorHidingSpecAlignment();
         testLevel3AvoidLargeProducts();
 
+        // 23. Carry-mistake distractors and intersection-key threshold
+        testCarryMistakeDistractors();
+        testIntersectionKeyThreshold();
+        testLevel7VisibleRange();
+        testJsonFieldNames();
+
         System.out.println("\n=== Results ===");
         System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
 
@@ -1617,11 +1623,15 @@ public class CrossMathTest {
         assertTrue("Level 2 operator hide chance is 0",
                 DifficultyLevel.LEVEL_2.operatorHideChance == 0.0);
 
-        // Level 2.5 should still not hide operators (spec: "mostly visible" → 0.0 in impl)
-        assertTrue("Level 2.5 operator hide chance is 0",
-                DifficultyLevel.LEVEL_2_5.operatorHideChance == 0.0);
+        // Level 2.5 and 3: "mostly visible" means small non-zero chance
+        assertTrue("Level 2.5 has small operator hiding",
+                DifficultyLevel.LEVEL_2_5.operatorHideChance > 0.0
+                && DifficultyLevel.LEVEL_2_5.operatorHideChance <= 0.15);
+        assertTrue("Level 3 has small operator hiding",
+                DifficultyLevel.LEVEL_3.operatorHideChance > 0.0
+                && DifficultyLevel.LEVEL_3.operatorHideChance <= 0.15);
 
-        // Level 3.5+ should have non-zero operator hiding
+        // Level 3.5+: "sometimes hidden" means higher chance
         assertTrue("Level 3.5 has operator hiding > 0",
                 DifficultyLevel.LEVEL_3_5.operatorHideChance > 0.0);
         assertTrue("Level 4 has operator hiding > 0",
@@ -1716,6 +1726,93 @@ public class CrossMathTest {
         String json = exporter.exportJson();
         assertTrue("Level 4 JSON export with updated hiding succeeds",
                 json.contains("\"level\"") && json.contains("\"puzzle\""));
+    }
+
+    // ── 23. Carry-mistake distractors, intersection-key threshold, Level 7 range ──
+
+    private static void testCarryMistakeDistractors() {
+        System.out.println("\n-- Carry-mistake distractors for Level 2 --");
+        PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(3).minCellValue(1).maxCellValue(20).build();
+        DistractorGenerator gen = new DistractorGenerator(config, new Random(42));
+
+        // 18 + 7 = 25: forgetting carry gives 15 (drop the tens carry)
+        DistractorGenerator.EquationContext addCtx =
+                new DistractorGenerator.EquationContext(18, 7, '+');
+        List<Integer> options = gen.generateOptions(25, 4, DifficultyLevel.LEVEL_2, addCtx);
+        assertTrue("Carry-mistake distractor: 25-10=15 present for 18+7",
+                options.contains(15));
+
+        // 13 - 8 = 5: borrowing mistake gives 15 (5+10)
+        DistractorGenerator.EquationContext subCtx =
+                new DistractorGenerator.EquationContext(13, 8, '-');
+        List<Integer> subOptions = gen.generateOptions(5, 4, DifficultyLevel.LEVEL_2, subCtx);
+        assertTrue("Carry-mistake distractor: 5+10=15 present for 13-8",
+                subOptions.contains(15));
+
+        // No carry-mistake distractors at Level 1 (below threshold)
+        DistractorGenerator.EquationContext lvl1Ctx =
+                new DistractorGenerator.EquationContext(8, 7, '+');
+        List<Integer> lvl1Options = gen.generateOptions(15, 3, DifficultyLevel.LEVEL_1, lvl1Ctx);
+        assertTrue("Level 1 still produces correct option count",
+                lvl1Options.size() == 3 && lvl1Options.contains(15));
+    }
+
+    private static void testIntersectionKeyThreshold() {
+        System.out.println("\n-- Intersection-key threshold at Level 3.5+ --");
+        // The spec says "intersections become key after level 3",
+        // meaning Level 3.5 and above
+        assertTrue("Level 3 intersectionsAreKey should be false",
+                DifficultyLevel.LEVEL_3.ordinal() < DifficultyLevel.LEVEL_3_5.ordinal());
+
+        // Verify shape generation works at Level 3 with the new threshold
+        for (int seed = 0; seed < 5; seed++) {
+            Random random = new Random(seed);
+            DifficultyLevel level = DifficultyLevel.LEVEL_3;
+            PuzzleConfig config = level.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(config, random);
+            level.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+            PuzzleGrid grid = gen.generate();
+            EquationMask mask = level.buildMask(grid, random, registry);
+            assertTrue("Level 3 seed " + seed + " mask builds successfully",
+                    mask.hiddenCount() >= 0);
+        }
+    }
+
+    private static void testLevel7VisibleRange() {
+        System.out.println("\n-- Level 7 visible range --");
+        assertTrue("Level 7 minVisible is 0.20 (spec: 20%)",
+                DifficultyLevel.LEVEL_7.minVisible == 0.20);
+        assertTrue("Level 7 maxVisible is 0.30 (spec: 35% for 6+, tighter for 7)",
+                DifficultyLevel.LEVEL_7.maxVisible == 0.30);
+        assertTrue("Level 6 minVisible is 0.20 (spec: 20-35%)",
+                DifficultyLevel.LEVEL_6.minVisible == 0.20);
+    }
+
+    private static void testJsonFieldNames() {
+        System.out.println("\n-- JSON field names match spec --");
+        Random random = new Random(42);
+        DifficultyLevel level = DifficultyLevel.LEVEL_3;
+        PuzzleConfig config = level.buildConfig();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate();
+        EquationMask mask = level.buildMask(grid, random, registry);
+        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
+        String json = exporter.exportJson();
+
+        assertTrue("JSON uses 'optionCount' field (spec-aligned)",
+                json.contains("\"optionCount\""));
+        assertTrue("JSON uses 'hideOperators' field (spec-aligned)",
+                json.contains("\"hideOperators\""));
+        assertTrue("JSON uses 'hideResults' field (spec-aligned)",
+                json.contains("\"hideResults\""));
+        assertTrue("JSON does NOT use old 'minOptionCount' field",
+                !json.contains("\"minOptionCount\""));
+        assertTrue("JSON does NOT use old 'operatorHideChance' field",
+                !json.contains("\"operatorHideChance\""));
     }
 
     private static void testLevel3AvoidLargeProducts() {

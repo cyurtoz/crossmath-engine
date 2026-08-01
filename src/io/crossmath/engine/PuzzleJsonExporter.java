@@ -98,10 +98,10 @@ public class PuzzleJsonExporter {
         }
         sb.append("  \"level\": {\n");
         sb.append("    \"id\": \"").append(level.label).append("\",\n");
-        sb.append("    \"minOptionCount\": ").append(level.minOptionCount).append(",\n");
-        sb.append("    \"maxOptionCount\": ").append(level.maxOptionCount).append(",\n");
-        sb.append("    \"operatorHideChance\": ").append(level.operatorHideChance).append(",\n");
-        sb.append("    \"resultHideChance\": ").append(level.resultHideChance).append("\n");
+        sb.append("    \"optionCount\": [").append(level.minOptionCount)
+          .append(", ").append(level.maxOptionCount).append("],\n");
+        sb.append("    \"hideOperators\": ").append(level.operatorHideChance).append(",\n");
+        sb.append("    \"hideResults\": ").append(level.resultHideChance).append("\n");
         sb.append("  }");
     }
 

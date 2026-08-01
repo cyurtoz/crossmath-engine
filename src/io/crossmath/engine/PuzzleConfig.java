@@ -121,10 +121,9 @@ public final class PuzzleConfig {
     public final boolean avoidCarry;
 
     /**
-     * Maximum allowed result for a multiplication equation.
-     * When positive, caps products below the full {@code maxCellValue}
-     * to avoid large products at introductory levels.
-     * Default: -1 (use {@code maxCellValue}).
+     * Maximum allowed product for multiplication results.
+     * Defaults to {@code maxCellValue}. Set lower to keep early-level
+     * products small (e.g. 30 for Level 3).
      */
     public final int maxMultiplyResult;
 
@@ -159,7 +158,8 @@ public final class PuzzleConfig {
         this.numBrackets            = Math.max(1, builder.numBrackets);
         this.avoidCarry             = builder.avoidCarry;
         this.maxMultiplyResult      = builder.maxMultiplyResult > 0
-                                    ? builder.maxMultiplyResult : builder.maxCellValue;
+                                      ? builder.maxMultiplyResult
+                                      : builder.maxCellValue;
     }
 
     public static Builder builder() {
@@ -186,7 +186,7 @@ public final class PuzzleConfig {
         private int minUsagePerOperator   = 2;
         private int numBrackets           = 4;
         private boolean avoidCarry        = false;
-        private int maxMultiplyResult     = -1;
+        private int maxMultiplyResult     = 0;
 
         /** Grid dimension — must be odd and ≥ 3 (default 5 → 9×9 display). */
         public Builder matrixSize(int matrixSize) {
@@ -237,7 +237,7 @@ public final class PuzzleConfig {
             return this;
         }
 
-        /** Cap multiplication results below maxCellValue (default -1 = disabled). */
+        /** Cap multiplication products (default: same as maxCellValue). */
         public Builder maxMultiplyResult(int maxMultiplyResult) {
             this.maxMultiplyResult = maxMultiplyResult;
             return this;

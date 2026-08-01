@@ -183,6 +183,22 @@ public class DistractorGenerator {
             }
         }
 
+        // Level 2-2.5: carry mistake distractors (grades.txt: "carry mistakes")
+        if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_2.ordinal()
+                && effectiveLevel.ordinal() <= DifficultyLevel.LEVEL_2_5.ordinal()) {
+            if (op == '+') {
+                int onesSum = (left % 10) + (right % 10);
+                if (onesSum >= 10) {
+                    distractors.add(correct - 10);
+                }
+            } else if (op == '-') {
+                int onesDiff = (left % 10) - (right % 10);
+                if (onesDiff < 0) {
+                    distractors.add(correct + 10);
+                }
+            }
+        }
+
         // Level 3+: table confusion (grades.txt: "table confusion (e.g., 6×3 vs 5×3)")
         if (effectiveLevel.ordinal() >= DifficultyLevel.LEVEL_3.ordinal()) {
             if (op == '*') {
