@@ -17,7 +17,7 @@ public enum DifficultyLevel {
     LEVEL_5  ("5",   0, 200, "+-*/amM",     7, 0.35, 0.45, 4, 5, 0.5,  0.85, false, -1),
     LEVEL_5_5("5.5", 0, 200, "+-*/amM",     7, 0.30, 0.40, 5, 5, 0.7,  0.85, false, -1),
     LEVEL_6  ("6",   0, 500, "+-*/amM^r",   7, 0.20, 0.35, 5, 5, 0.85, 0.85, false, -1),
-    LEVEL_7  ("7",   0, 999, "+-*/amM^r%L", 7, 0.20, 0.30, 5, 6, 0.85, 0.90, false, -1);
+    LEVEL_7  ("7",   0, 999, "+-*/amM^r%L", 7, 0.15, 0.30, 5, 6, 0.85, 0.90, false, -1);
 
     public final String label;
     public final int    minVal;
@@ -124,7 +124,7 @@ public enum DifficultyLevel {
         for (int i = 0; i < attempts; i++) {
             EquationMask candidate;
             if (armCount > 0) {
-                boolean intersectionsAreKey = ordinal() >= LEVEL_3_5.ordinal();
+                boolean intersectionsAreKey = ordinal() >= LEVEL_3.ordinal();
                 candidate = EquationMask.smartRandomForArms(grid.shape(), countToHide, random, intersectionsAreKey);
             } else {
                 candidate = EquationMask.smartRandom(config, countToHide, maxUnknownsPerEquation, random);

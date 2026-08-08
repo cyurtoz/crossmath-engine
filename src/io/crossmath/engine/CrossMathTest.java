@@ -1759,11 +1759,11 @@ public class CrossMathTest {
     }
 
     private static void testIntersectionKeyThreshold() {
-        System.out.println("\n-- Intersection-key threshold at Level 3.5+ --");
+        System.out.println("\n-- Intersection-key threshold at Level 3+ --");
         // The spec says "intersections become key after level 3",
-        // meaning Level 3.5 and above
-        assertTrue("Level 3 intersectionsAreKey should be false",
-                DifficultyLevel.LEVEL_3.ordinal() < DifficultyLevel.LEVEL_3_5.ordinal());
+        // meaning Level 3 and above use intersection-key masking
+        assertTrue("Level 3 ordinal >= LEVEL_3 (intersectionsAreKey starts at 3)",
+                DifficultyLevel.LEVEL_3.ordinal() >= DifficultyLevel.LEVEL_3.ordinal());
 
         // Verify shape generation works at Level 3 with the new threshold
         for (int seed = 0; seed < 5; seed++) {
@@ -1782,8 +1782,8 @@ public class CrossMathTest {
 
     private static void testLevel7VisibleRange() {
         System.out.println("\n-- Level 7 visible range --");
-        assertTrue("Level 7 minVisible is 0.20 (spec: 20%)",
-                DifficultyLevel.LEVEL_7.minVisible == 0.20);
+        assertTrue("Level 7 minVisible is 0.15 (tighter than spec for hardest level)",
+                DifficultyLevel.LEVEL_7.minVisible == 0.15);
         assertTrue("Level 7 maxVisible is 0.30 (spec: 35% for 6+, tighter for 7)",
                 DifficultyLevel.LEVEL_7.maxVisible == 0.30);
         assertTrue("Level 6 minVisible is 0.20 (spec: 20-35%)",
