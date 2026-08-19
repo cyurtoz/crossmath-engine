@@ -222,7 +222,10 @@ public class PuzzleJsonExporter {
             sb.append("], \"operators\": [");
             for (int i = 0; i < ops.size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append("\"").append(ops.get(i).symbol()).append("\"");
+                Operator op = ops.get(i);
+                sb.append("{\"symbol\": \"").append(op.symbol()).append("\"");
+                if (op.isUnary()) sb.append(", \"isUnary\": true");
+                sb.append("}");
             }
             GridCell rc = arm.resultCell();
             sb.append("], \"result\": {\"row\": ").append(rc.row())

@@ -146,6 +146,15 @@ public class CrossMathTest {
         testLevel7VisibleRange();
         testJsonFieldNames();
 
+        // 24. Spec-aligned maxUnknowns for Levels 2 and 2.5
+        testLevel2MaxUnknownsPerEquation();
+
+        // 25. Min operator usage for advanced levels
+        testMinUsageAdvancedLevels();
+
+        // 26. JSON operator objects with isUnary flag
+        testJsonOperatorIsUnaryFlag();
+
         System.out.println("\n=== Results ===");
         System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
 
@@ -1856,5 +1865,83 @@ public class CrossMathTest {
                 }
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 24. Spec-aligned maxUnknowns for Levels 2 and 2.5
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static void testLevel2MaxUnknownsPerEquation() {
+        System.out.println("\n-- Level 2 and 2.5 maxUnknownsPerEquation = 2 --");
+        assertEquals("Level 2 maxUnknownsPerEquation", 2,
+                DifficultyLevel.LEVEL_2.maxUnknownsPerEquation);
+        assertEquals("Level 2.5 maxUnknownsPerEquation", 2,
+                DifficultyLevel.LEVEL_2_5.maxUnknownsPerEquation);
+        assertEquals("Level 1.5 maxUnknownsPerEquation stays 1", 1,
+                DifficultyLevel.LEVEL_1_5.maxUnknownsPerEquation);
+        assertEquals("Level 3 maxUnknownsPerEquation stays 2", 2,
+                DifficultyLevel.LEVEL_3.maxUnknownsPerEquation);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 25. Min operator usage for advanced levels
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static void testMinUsageAdvancedLevels() {
+        System.out.println("\n-- Advanced levels enforce minUsage >= 1 --");
+        PuzzleConfig config5 = DifficultyLevel.LEVEL_5.buildConfig();
+        assertTrue("Level 5 minUsagePerOperator >= 1",
+                config5.minUsagePerOperator >= 1);
+        PuzzleConfig config6 = DifficultyLevel.LEVEL_6.buildConfig();
+        assertTrue("Level 6 minUsagePerOperator >= 1",
+                config6.minUsagePerOperator >= 1);
+        PuzzleConfig config7 = DifficultyLevel.LEVEL_7.buildConfig();
+        assertTrue("Level 7 minUsagePerOperator >= 1",
+                config7.minUsagePerOperator >= 1);
+
+        for (int seed = 0; seed < 5; seed++) {
+            Random random = new Random(seed);
+            DifficultyLevel level = DifficultyLevel.LEVEL_5;
+            PuzzleConfig cfg = level.buildConfig();
+            OperatorRegistry registry = new OperatorRegistry(cfg, random);
+            level.configureRegistry(registry);
+            CrossMathGenerator gen = new CrossMathGenerator(cfg, registry, random);
+            try {
+                PuzzleGrid grid = gen.generate();
+                assertTrue("Level 5 seed " + seed + " generates successfully",
+                        grid != null && grid.verify());
+            } catch (Exception e) {
+                assertTrue("Level 5 seed " + seed + " should not throw", false);
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 26. JSON operator objects with isUnary flag
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static void testJsonOperatorIsUnaryFlag() {
+        System.out.println("\n-- JSON operators include isUnary for sqrt --");
+        Random random = new Random(42);
+        DifficultyLevel level = DifficultyLevel.LEVEL_6;
+        PuzzleConfig config = level.buildConfig();
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        level.configureRegistry(registry);
+
+        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
+        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+        PuzzleGrid grid = gen.generate(shapeGen);
+        EquationMask mask = level.buildMask(grid, random, registry);
+        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
+        String json = exporter.exportJson();
+
+        assertTrue("JSON shape operators use object format with 'symbol'",
+                json.contains("\"symbol\":"));
+        if (json.contains("\"symbol\": \"r\"")) {
+            assertTrue("JSON sqrt operator includes isUnary flag",
+                    json.contains("\"isUnary\": true"));
+        }
+        assertTrue("JSON binary operators do NOT include isUnary",
+                !json.contains("\"symbol\": \"+\", \"isUnary\""));
     }
 }

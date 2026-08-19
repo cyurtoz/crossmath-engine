@@ -78,7 +78,6 @@ class MaxOperator implements Operator {
         return maximum;
     }
 
-    /** All values in [minCellValue, maxAddOperand] except leftOperand itself. */
     @Override
     public List<Integer> validRightOperands(int leftOperand, PuzzleConfig config, Random random) {
         List<Integer> valid = new ArrayList<>();
