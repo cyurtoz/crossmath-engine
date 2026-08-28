@@ -35,7 +35,7 @@ public class CrossMathTest {
         testShapeMode5x5();
         testShapeMode7x7();
 
-        // 3. All 12 DifficultyLevel presets
+        // 3. All 14 DifficultyLevel presets
         testAllDifficultyLevels();
 
         // 4. Cell values within bounds

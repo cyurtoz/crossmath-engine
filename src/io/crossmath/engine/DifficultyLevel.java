@@ -168,7 +168,7 @@ public enum DifficultyLevel {
     @Override
     public String toString() {
         return String.format("Level %s [%d–%d] ops=%s matrix=%d visible=%.0f–%.0f%%",
-                label, minVal, maxVal, allowedOps, matrixSize,
+                label, Math.max(1, minVal), maxVal, allowedOps, matrixSize,
                 minVisible * 100, maxVisible * 100);
     }
 }

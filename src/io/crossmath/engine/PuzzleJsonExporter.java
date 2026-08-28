@@ -245,11 +245,15 @@ public class PuzzleJsonExporter {
                 for (int i = 0; i < ops.size(); i++) {
                     int leftVal = grid.getCellValue(operands.get(i));
                     int rightVal = grid.getCellValue(operands.get(i + 1));
-                    int result = ops.get(i).apply(leftVal, rightVal, grid.config);
-                    if (operands.get(i).equals(target) || operands.get(i + 1).equals(target)
-                            || arm.resultCell().equals(target)) {
+                    if (operands.get(i).equals(target) || operands.get(i + 1).equals(target)) {
                         return new DistractorGenerator.EquationContext(leftVal, rightVal, ops.get(i).symbol());
                     }
+                }
+                if (arm.resultCell().equals(target) && !ops.isEmpty()) {
+                    int last = ops.size() - 1;
+                    int leftVal = grid.getCellValue(operands.get(last));
+                    int rightVal = grid.getCellValue(operands.get(last + 1));
+                    return new DistractorGenerator.EquationContext(leftVal, rightVal, ops.get(last).symbol());
                 }
             }
             return null;

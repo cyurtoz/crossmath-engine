@@ -70,9 +70,11 @@ public class DistractorGenerator {
             if (distractorList.size() >= needed) break;
             distractorList.add(d);
         }
-        while (distractorList.size() < needed) {
+        int safetyLimit = needed * 10;
+        while (distractorList.size() < needed && safetyLimit-- > 0) {
             int fallback = generateFallback(correctAnswer, distractorList);
-            if (fallback != correctAnswer && fallback >= config.minCellValue && fallback <= config.maxCellValue) {
+            if (fallback != correctAnswer && fallback >= config.minCellValue
+                    && fallback <= config.maxCellValue && !distractorList.contains(fallback)) {
                 distractorList.add(fallback);
             }
         }
@@ -314,8 +316,17 @@ public class DistractorGenerator {
                 return candidate;
             }
         }
-        int offset = existing.size() + 2;
-        return Math.min(config.maxCellValue, correct + offset);
+        for (int offset = 1; offset <= config.maxCellValue - config.minCellValue; offset++) {
+            int above = correct + offset;
+            if (above != correct && above >= config.minCellValue && above <= config.maxCellValue && !existing.contains(above)) {
+                return above;
+            }
+            int below = correct - offset;
+            if (below != correct && below >= config.minCellValue && below <= config.maxCellValue && !existing.contains(below)) {
+                return below;
+            }
+        }
+        return correct + 1;
     }
 
     private static int reverseDigits(int n) {
