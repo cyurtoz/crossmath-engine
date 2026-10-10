@@ -21,3 +21,8 @@
 
 # Windows system files
 Thumbs.db
+
+# Build output
+/out/
+/.next/
+/node_modules/
