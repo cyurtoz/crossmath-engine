@@ -1,37 +1,46 @@
 package io.crossmath.engine;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
- * An equation arm: a chain of operand cells ending in a result cell.
+ * One equation in the puzzle: {@code operand[0] op operand[1] = result}.
  *
- * <pre>
- *   operandCells[0]  op[0]  operandCells[1]  =  resultCell
- * </pre>
- *
- * The first operand cell (index 0) is always the source intersection
- * from which this arm was grown. Additional operand cells may be
- * intersections (shared with perpendicular arms) or free operands
- * (exclusively owned by this arm).
+ * <p>The operator is assigned during the filling phase, not during shape
+ * generation. The shape only determines cell positions.
  */
-public record EquationArm(List<GridCell> operandCells, GridCell resultCell, ArmDirection direction) {
+public class EquationArm {
 
-    public int operandCount() {
-        return operandCells.size();
+    private final List<GridCell>  operandCells;
+    private final GridCell        resultCell;
+    private final ArmDirection    direction;
+    private Operator              operator;   // set during filling
+
+    public EquationArm(List<GridCell> operandCells, GridCell resultCell, ArmDirection direction) {
+        this.operandCells = List.copyOf(operandCells);
+        this.resultCell   = resultCell;
+        this.direction    = direction;
     }
 
-    public GridCell sourceCell() {
-        return operandCells.get(0);
-    }
+    // ── Getters ────────────────────────────────────────────────────────────
 
+    public List<GridCell> operandCells() { return operandCells; }
+    public GridCell       resultCell()   { return resultCell; }
+    public ArmDirection   direction()    { return direction; }
+    public Operator       operator()     { return operator; }
+
+    public void setOperator(Operator operator) { this.operator = operator; }
+
+    /** All cells: operands first, then result (last). */
     public List<GridCell> allCells() {
-        var all = new java.util.ArrayList<>(operandCells);
+        List<GridCell> all = new ArrayList<>(operandCells);
         all.add(resultCell);
-        return List.copyOf(all);
+        return Collections.unmodifiableList(all);
     }
 
     @Override
     public String toString() {
-        return direction + " arm: " + operandCells + " = " + resultCell;
+        return direction.name().charAt(0) + " " + operandCells + " → " + resultCell;
     }
 }

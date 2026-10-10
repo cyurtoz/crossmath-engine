@@ -1,9 +1,9 @@
 package io.crossmath.engine;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,119 +12,82 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Generates fully solved CrossMath puzzle grids.
+ * Generates fully solved CrossMath puzzle grids using shape-based generation.
  *
  * <h2>Algorithm</h2>
  *
- * <h3>Phase 1 — Fill free rows</h3>
- * Free rows (0, 1, 3, …) choose their own values.  The generator picks values
- * using a {@link BracketedPicker} that cycles through equal segments of the
- * valid range, ensuring variety.  Operators are tried in ascending usage order
- * so underused operators get first pick.
+ * <h3>Step 1 — Generate shape</h3>
+ * {@link ShapeGenerator} grows an asymmetric shape via BFS from a random
+ * starting cell. Each arm is a 3-cell equation ({@code A op B = C}).
  *
- * <h3>Phase 2 — Derive constrained rows</h3>
- * Derived rows (2, 4, …) are computed from two source rows via a backtracking
- * search that prunes bad branches early at result columns.
+ * <h3>Step 2 - Seed root cells</h3>
+ * Non-result entries from {@link PuzzleShape#intersections()} receive values
+ * from the {@link BracketedPicker}. In sparse shapes this set includes both
+ * true crossings and promoted branch anchors, so later arms have more roots
+ * to grow from.
  *
- * <h3>Seeding — guaranteeing operator coverage in derived rows</h3>
- * Source row pairs are seeded so each registered operator gets at least one
- * compatible (top, bottom) column pair that it can process in {@code deriveRow}.
- * Free columns (col 0, 1, 3, …) are assigned to operators round-robin; each
- * operator provides a valid bottom value for the assigned column via
- * {@link Operator#validRightOperands}.  This prevents add from monopolising
- * all derived-row columns.
+ * <h3>Step 3 — Fill arms in dependency order</h3>
+ * Arms are topologically sorted: an arm that uses another arm's result cell
+ * as an operand is processed after it. Each arm is filled independently by
+ * choosing an operator (usage-biased) and computing/assigning values for
+ * free operands and the result cell.
  */
 public class CrossMathGenerator {
-
-    private static final int DERIVE_ROW_VARIETY_RETRIES = 5;
-    private static final int MAX_ROW_FILL_TRIES         = 500;
 
     private final PuzzleConfig     config;
     private final OperatorRegistry registry;
     private final Random           random;
     private final BracketedPicker  picker;
-
-    // ── Construction ──────────────────────────────────────────────────────────
+    private final ShapeGenerator   shapeGenerator;
 
     public CrossMathGenerator(PuzzleConfig config, OperatorRegistry registry, Random random) {
-        this.config  = config;
-        this.registry = registry;
-        this.random  = random;
-        this.picker  = new BracketedPicker(
-            config.minCellValue, config.maxChainSafeOperand, config.numBrackets, random);
+        this.config         = config;
+        this.registry       = registry;
+        this.random         = random;
+        this.picker         = new BracketedPicker(
+            config.minCellValue, config.maxSeedValue, config.numBrackets, random);
+        this.shapeGenerator = new ShapeGenerator(config, random);
     }
 
-    // ── Public API ────────────────────────────────────────────────────────────
-
-    public PuzzleGrid generate(PuzzleShape shape) {
-        return generateWithShape(shape, null);
-    }
-
-    public PuzzleGrid generate(ShapeGenerator shapeGen) {
-        return generateWithShape(null, shapeGen);
-    }
-
-    private PuzzleGrid generateWithShape(PuzzleShape fixedShape, ShapeGenerator shapeGen) {
-        int shapesPerRound = 50;
-        int fillsPerShape = Math.max(1, config.maxGenerationAttempts / shapesPerRound);
-
-        for (int shapeAttempt = 0; shapeAttempt < shapesPerRound; shapeAttempt++) {
-            PuzzleShape shape = fixedShape != null ? fixedShape : shapeGen.generate();
-
-            int totalOperatorSlots = shape.arms().stream()
-                    .mapToInt(arm -> arm.operandCount() - 1)
-                    .sum();
-            int operatorCount = registry.size();
-            final int effectiveMinUsage;
-            if (config.minUsagePerOperator > 0 && operatorCount > 0) {
-                int maxPossiblePerOp = totalOperatorSlots / operatorCount;
-                effectiveMinUsage = Math.min(config.minUsagePerOperator, maxPossiblePerOp);
-            } else {
-                effectiveMinUsage = config.minUsagePerOperator;
-            }
-
-            for (int attempt = 1; attempt <= fillsPerShape; attempt++) {
-                PuzzleGrid candidate = tryFillShape(shape);
-                if (candidate == null) continue;
-
-                if (!candidate.verify()) continue;
-                if (hasDuplicateEquationsShape(candidate, shape)) continue;
-
-                Map<Character, Integer> usage = countShapeOperatorUsage(candidate, shape);
-                boolean meetsMin = effectiveMinUsage <= 0 ||
-                        usage.values().stream().allMatch(c -> c >= effectiveMinUsage);
-                if (!meetsMin) {
-                    continue;
-                }
-                int globalAttempt = shapeAttempt * fillsPerShape + attempt;
-                System.err.printf("[Generator] Shape solved on attempt %d. Usage: %s%n", globalAttempt, usage);
-                return candidate;
-            }
-
-            if (fixedShape != null) break;
-        }
-        throw new IllegalStateException(
-                "Shape generation failed after " + config.maxGenerationAttempts + " attempts.");
-    }
+    // ── Public API ──────────────────────────────────────────────────────────
 
     public PuzzleGrid generate() {
+        // Fail fast when the operator floor demands more arms than the target
+        // shape size can ever supply.
+        validateUsageFeasibility();
+        int minimumArmsRequired = minimumArmsRequired();
+
         for (int attempt = 1; attempt <= config.maxGenerationAttempts; attempt++) {
-            PuzzleGrid candidate = tryBuildGrid();
-            if (candidate == null) {
+            PuzzleShape shape = shapeGenerator.generate();
+
+            // Small shapes cannot satisfy the operator-usage floor, so skip
+            // them before spending time on numeric filling.
+            if (shape.armCount() < minimumArmsRequired) {
+                if (attempt % 200 == 0) {
+                    System.out.printf(
+                        "[Generator] Attempt %d - shape too small: %d arms (need >= %d)%n",
+                        attempt, shape.armCount(), minimumArmsRequired);
+                }
                 continue;
             }
-            if (hasDuplicateEquationsFixedGrid(candidate)) continue;
-            OperatorUsageReport usage = countOperatorUsage(candidate);
+
+            PuzzleGrid grid = tryFillShape(shape);
+            if (grid == null) continue;
+
+            OperatorUsageReport usage = countOperatorUsage(grid);
             if (!usage.meetsMinimum(config.minUsagePerOperator)) {
-                System.err.printf(
-                    "[Generator] Attempt %d discarded — usage below minimum: %s%n",
-                    attempt, usage.summary());
+                if (attempt % 200 == 0) {
+                    System.out.printf(
+                        "[Generator] Attempt %d — usage below minimum: %s%n",
+                        attempt, usage.summary());
+                }
                 continue;
             }
-            System.err.printf("[Generator] Solved on attempt %d. Usage: %s%n",
-                attempt, usage.summary());
-            assertVerified(candidate);
-            return candidate;
+
+            System.out.printf("[Generator] Solved on attempt %d (%d arms). Usage: %s%n",
+                attempt, shape.armCount(), usage.summary());
+            assertVerified(grid);
+            return grid;
         }
         throw new IllegalStateException(
             "Failed after " + config.maxGenerationAttempts + " attempts. " +
@@ -132,32 +95,257 @@ public class CrossMathGenerator {
             "or lower minUsagePerOperator.");
     }
 
-    // ── Top-level attempt ─────────────────────────────────────────────────────
+    // ── Shape filling ───────────────────────────────────────────────────────
 
-    private PuzzleGrid tryBuildGrid() {
-        PuzzleGrid              grid        = new PuzzleGrid(config);
+    private PuzzleGrid tryFillShape(PuzzleShape shape) {
+        PuzzleGrid              grid        = new PuzzleGrid(config, shape);
         Map<Character, Integer> usageCounts = initialUsageCounts();
 
-        int[] topSeeds    = new int[config.matrixSize];
-        int[] bottomSeeds = new int[config.matrixSize];
-        seedCompatiblePairs(topSeeds, bottomSeeds, initialUsageCounts());
-
-        if (!fillRow(grid, 0, usageCounts, topSeeds))    return null;
-        if (!fillRow(grid, 1, usageCounts, bottomSeeds)) return null;
-
-        for (int equationIndex = 0; equationIndex < config.equationsPerLine; equationIndex++) {
-            if (!deriveRow(grid, equationIndex, usageCounts)) return null;
-
-            boolean moreRowsFollow = equationIndex < config.equationsPerLine - 1;
-            if (moreRowsFollow) {
-                int derivedRow  = equationIndex * 2 + 2;
-                int nextFreeRow = equationIndex * 2 + 3;
-                int[] nextSeeds = seedCompatibleBottoms(grid, derivedRow, usageCounts);
-                if (!fillRow(grid, nextFreeRow, usageCounts, nextSeeds)) return null;
+        // Step 2: Seed root cells that are not themselves produced by an arm.
+        Set<GridCell> resultCells = new HashSet<>();
+        for (EquationArm arm : shape.arms()) {
+            resultCells.add(arm.resultCell());
+        }
+        for (GridCell cell : shape.intersections()) {
+            if (!resultCells.contains(cell)) {
+                grid.setValue(cell, picker.next());
             }
         }
+
+        // Step 3: Topological sort and fill
+        List<EquationArm> sorted = topologicalSort(shape);
+        for (EquationArm arm : sorted) {
+            if (!fillArm(grid, arm, usageCounts)) {
+                return null;
+            }
+        }
+
         return grid;
     }
+
+    // ── Topological sort ────────────────────────────────────────────────────
+
+    /**
+     * Sorts arms so that if arm A uses arm B's result cell as an operand,
+     * B comes before A. Uses Kahn's algorithm.
+     */
+    private List<EquationArm> topologicalSort(PuzzleShape shape) {
+        List<EquationArm> arms = shape.arms();
+        int n = arms.size();
+
+        // Map: result cell → arm index
+        Map<GridCell, Integer> resultToArm = new HashMap<>();
+        for (int i = 0; i < n; i++) {
+            resultToArm.put(arms.get(i).resultCell(), i);
+        }
+
+        // Build dependency adjacency: deps[i] = set of arms that i depends on
+        int[] inDegree = new int[n];
+        List<List<Integer>> dependents = new ArrayList<>();
+        for (int i = 0; i < n; i++) dependents.add(new ArrayList<>());
+
+        for (int i = 0; i < n; i++) {
+            for (GridCell operand : arms.get(i).operandCells()) {
+                Integer dep = resultToArm.get(operand);
+                if (dep != null && dep != i) {
+                    dependents.get(dep).add(i);
+                    inDegree[i]++;
+                }
+            }
+        }
+
+        // Kahn's algorithm
+        List<Integer> order = new ArrayList<>();
+        List<Integer> ready = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            if (inDegree[i] == 0) ready.add(i);
+        }
+        Collections.shuffle(ready, random);
+
+        while (!ready.isEmpty()) {
+            int idx = ready.remove(ready.size() - 1);
+            order.add(idx);
+            for (int dep : dependents.get(idx)) {
+                if (--inDegree[dep] == 0) ready.add(dep);
+            }
+        }
+
+        // If cycle detected (shouldn't happen), fall back to original order
+        if (order.size() < n) {
+            for (int i = 0; i < n; i++) {
+                if (!order.contains(i)) order.add(i);
+            }
+        }
+
+        List<EquationArm> sorted = new ArrayList<>();
+        for (int idx : order) sorted.add(arms.get(idx));
+        return sorted;
+    }
+
+    // ── Arm filling ─────────────────────────────────────────────────────────
+
+    /**
+     * Fills a single arm's operator and free cell values.
+     * The arm's operand cells may already have values (seeded root cells or
+     * results from previously filled arms). The result cell is always free.
+     */
+    private boolean fillArm(PuzzleGrid grid, EquationArm arm,
+                             Map<Character, Integer> usageCounts) {
+        GridCell cellA = arm.operandCells().get(0);
+        GridCell cellB = arm.operandCells().get(1);
+        GridCell cellR = arm.resultCell();
+
+        boolean aKnown = grid.hasValue(cellA);
+        boolean bKnown = grid.hasValue(cellB);
+        int va = aKnown ? grid.getValue(cellA) : Integer.MIN_VALUE;
+        int vb = bKnown ? grid.getValue(cellB) : Integer.MIN_VALUE;
+
+        // Result is always unknown at this point (topological order guarantees it)
+
+        if (aKnown && bKnown) {
+            return fillBothKnown(grid, arm, va, vb, cellR, usageCounts);
+        } else if (aKnown) {
+            return fillLeftKnown(grid, arm, va, cellB, cellR, usageCounts);
+        } else if (bKnown) {
+            return fillRightKnown(grid, arm, vb, cellA, cellR, usageCounts);
+        } else {
+            return fillBothFree(grid, arm, cellA, cellB, cellR, usageCounts);
+        }
+    }
+
+    /** Both operands known → find operator, compute result. */
+    private boolean fillBothKnown(PuzzleGrid grid, EquationArm arm,
+                                   int va, int vb, GridCell cellR,
+                                   Map<Character, Integer> usageCounts) {
+        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+            int result = op.apply(va, vb, config);
+            if (result != Integer.MIN_VALUE) {
+                grid.setValue(cellR, result);
+                arm.setOperator(op);
+                usageCounts.merge(op.symbol(), 1, Integer::sum);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Left operand known, right free → pick operator + right operand. */
+    private boolean fillLeftKnown(PuzzleGrid grid, EquationArm arm,
+                                   int va, GridCell cellB, GridCell cellR,
+                                   Map<Character, Integer> usageCounts) {
+        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+            List<Integer> rights = op.validRightOperands(va, config, random);
+            if (!rights.isEmpty()) {
+                int vb = rights.get(0);
+                int result = op.apply(va, vb, config);
+                if (result != Integer.MIN_VALUE) {
+                    grid.setValue(cellB, vb);
+                    grid.setValue(cellR, result);
+                    arm.setOperator(op);
+                    usageCounts.merge(op.symbol(), 1, Integer::sum);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Right operand known, left free → pick operator + left operand. */
+    private boolean fillRightKnown(PuzzleGrid grid, EquationArm arm,
+                                    int vb, GridCell cellA, GridCell cellR,
+                                    Map<Character, Integer> usageCounts) {
+        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+            List<Integer> lefts = findValidLeftOperands(op, vb);
+            if (!lefts.isEmpty()) {
+                int va = lefts.get(0);
+                int result = op.apply(va, vb, config);
+                if (result != Integer.MIN_VALUE) {
+                    grid.setValue(cellA, va);
+                    grid.setValue(cellR, result);
+                    arm.setOperator(op);
+                    usageCounts.merge(op.symbol(), 1, Integer::sum);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Both operands free → pick operator + both operands. */
+    private boolean fillBothFree(PuzzleGrid grid, EquationArm arm,
+                                   GridCell cellA, GridCell cellB, GridCell cellR,
+                                   Map<Character, Integer> usageCounts) {
+        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
+            // Sparse shapes can tolerate a wider introduced-value range, so
+            // try a shuffled seedable pool instead of a single picker draw.
+            for (int va : candidateFreeOperands()) {
+                List<Integer> rights = op.validRightOperands(va, config, random);
+                if (!rights.isEmpty()) {
+                    int vb = rights.get(0);
+                    int result = op.apply(va, vb, config);
+                    if (result != Integer.MIN_VALUE) {
+                        grid.setValue(cellA, va);
+                        grid.setValue(cellB, vb);
+                        grid.setValue(cellR, result);
+                        arm.setOperator(op);
+                        usageCounts.merge(op.symbol(), 1, Integer::sum);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // ── Left-operand enumeration ────────────────────────────────────────────
+
+    /**
+     * Finds all valid left operand values for a given operator and fixed
+     * right operand. Enumerates [minCellValue, maxCellValue] and keeps
+     * those where {@code op.apply(left, rightOperand)} is valid.
+     */
+    private List<Integer> findValidLeftOperands(Operator op, int rightOperand) {
+        List<Integer> valid = new ArrayList<>();
+        for (int left = config.minCellValue; left <= config.maxCellValue; left++) {
+            if (op.apply(left, rightOperand, config) != Integer.MIN_VALUE) {
+                valid.add(left);
+            }
+        }
+        Collections.shuffle(valid, random);
+        return valid;
+    }
+
+    // ── Operator ordering ───────────────────────────────────────────────────
+
+    private List<Operator> operatorsByAscendingUsage(Map<Character, Integer> usageCounts) {
+        List<Operator> sorted = registry.all();
+        Collections.shuffle(sorted, random);
+        sorted.sort(Comparator
+            .comparingInt((Operator op) -> operatorPriority(op, usageCounts))
+            .thenComparingInt(op -> usageCounts.getOrDefault(op.symbol(), 0)));
+        return sorted;
+    }
+
+    private int operatorPriority(Operator op, Map<Character, Integer> usageCounts) {
+        // Keep under-used operators at the front until they reach the minimum.
+        if (usageCounts.getOrDefault(op.symbol(), 0) < config.minUsagePerOperator) {
+            return 0;
+        }
+        return 1;
+    }
+
+    private List<Integer> candidateFreeOperands() {
+        List<Integer> candidates = new ArrayList<>();
+        // Sparse-shape roots and fully free operands now use maxSeedValue
+        // rather than the older dense-grid chain-safe cap.
+        for (int value = config.minCellValue; value <= config.maxSeedValue; value++) {
+            candidates.add(value);
+        }
+        Collections.shuffle(candidates, random);
+        return candidates;
+    }
+
+    // ── Usage counting ──────────────────────────────────────────────────────
 
     private Map<Character, Integer> initialUsageCounts() {
         Map<Character, Integer> counts = new LinkedHashMap<>();
@@ -167,339 +355,22 @@ public class CrossMathGenerator {
         return counts;
     }
 
-    // ── Column-pair seeding ───────────────────────────────────────────────────
-
-    /**
-     * Seeds top and bottom values for all free column positions.
-     *
-     * <p>Free columns (col 0, 1, 3, …) are assigned to operators round-robin
-     * in ascending usage order.  For each column the assigned operator provides
-     * a valid bottom value via {@link Operator#validRightOperands}, guaranteeing
-     * that operator has at least one usable (top, bottom) pair in the derived row.
-     * Unseeded positions fall back to {@link #nextOperand()}.
-     */
-    private void seedCompatiblePairs(int[] topSeeds, int[] bottomSeeds,
-                                     Map<Character, Integer> usageCounts) {
-        Arrays.fill(topSeeds,    Integer.MIN_VALUE);
-        Arrays.fill(bottomSeeds, Integer.MIN_VALUE);
-
-        List<Operator> operators = operatorsByAscendingUsage(usageCounts);
-        int[]          freeCols  = freeColumnPositions();
-
-        for (int i = 0; i < freeCols.length; i++) {
-            int      freeCol  = freeCols[i];
-            Operator operator = operators.get(i % operators.size());
-
-            for (int attempt = 0; attempt < 50; attempt++) {
-                int           topValue    = picker.next();
-                List<Integer> validBottoms = operator.validRightOperands(topValue, config, random);
-                if (!validBottoms.isEmpty()) {
-                    topSeeds[freeCol]    = topValue;
-                    bottomSeeds[freeCol] = validBottoms.get(0);   // already shuffled
-                    break;
-                }
-            }
-        }
-    }
-
-    /**
-     * Seeds bottom values for a free row that is vertically paired with an
-     * already-derived {@code topRow}.
-     *
-     * <p>The top value is fixed (from the derived row).  Each free column is
-     * assigned to the most underused operator; if that operator cannot pair
-     * with the fixed top value, any working operator is used as fallback.
-     */
-    private int[] seedCompatibleBottoms(PuzzleGrid grid, int topRow,
-                                         Map<Character, Integer> usageCounts) {
-        int[]          bottomSeeds = new int[config.matrixSize];
-        int[]          freeCols    = freeColumnPositions();
-        List<Operator> operators   = operatorsByAscendingUsage(usageCounts);
-        Arrays.fill(bottomSeeds, Integer.MIN_VALUE);
-
-        for (int i = 0; i < freeCols.length; i++) {
-            int freeCol  = freeCols[i];
-            int topValue = grid.numbers[topRow][freeCol];
-
-            // Try the assigned operator first, then fall back to any working operator
-            Operator target = operators.get(i % operators.size());
-            List<Integer> candidates = target.validRightOperands(topValue, config, random);
-
-            if (candidates.isEmpty()) {
-                for (Operator fallback : operators) {
-                    candidates = fallback.validRightOperands(topValue, config, random);
-                    if (!candidates.isEmpty()) break;
-                }
-            }
-
-            if (!candidates.isEmpty()) {
-                bottomSeeds[freeCol] = candidates.get(0);
-            }
-        }
-        return bottomSeeds;
-    }
-
-    /** Free column positions in a row: col 0 and each right-operand col (1, 3, 5, …). */
-    private int[] freeColumnPositions() {
-        int[] free = new int[1 + config.equationsPerLine];
-        free[0] = 0;
-        for (int eq = 0; eq < config.equationsPerLine; eq++) {
-            free[eq + 1] = eq * 2 + 1;
-        }
-        return free;
-    }
-
-    // ── Phase 1: fill a free row ──────────────────────────────────────────────
-
-    private boolean fillRow(PuzzleGrid grid, int row,
-                            Map<Character, Integer> usageCounts,
-                            int[] seededValues) {
-        int matrixSize       = config.matrixSize;
-        int equationsPerLine = config.equationsPerLine;
-
-        for (int tryCount = 0; tryCount < MAX_ROW_FILL_TRIES; tryCount++) {
-            int[]      rowValues    = new int[matrixSize];
-            Operator[] rowOperators = new Operator[equationsPerLine];
-            boolean    success      = true;
-
-            rowValues[0] = seededOrRandom(seededValues, 0);
-
-            for (int eq = 0; eq < equationsPerLine; eq++) {
-                int leftCol   = eq * 2;
-                int rightCol  = leftCol + 1;
-                int resultCol = leftCol + 2;
-                int leftValue = rowValues[leftCol];
-                int seededRight = seededOrRandom(seededValues, rightCol);
-
-                boolean filled = (seededRight != Integer.MIN_VALUE)
-                    ? fillEquationWithFixedRight(rowValues, rowOperators, eq,
-                                                  leftValue, seededRight, rightCol, resultCol, usageCounts)
-                    : fillEquationWithFreeRight(rowValues, rowOperators, eq,
-                                                 leftValue, rightCol, resultCol, usageCounts);
-
-                if (!filled) {
-                    success = false;
-                    break;
-                }
-            }
-
-            if (!success) continue;
-
-            System.arraycopy(rowValues,    0, grid.numbers[row],             0, matrixSize);
-            System.arraycopy(rowOperators, 0, grid.horizontalOperators[row], 0, equationsPerLine);
-            updateUsageCounts(usageCounts, rowOperators);
-            return true;
-        }
-        return false;
-    }
-
-    private boolean fillEquationWithFixedRight(
-            int[] rowValues, Operator[] rowOperators, int equationIndex,
-            int leftValue, int seededRight, int rightCol, int resultCol,
-            Map<Character, Integer> usageCounts) {
-
-        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
-            int result = op.apply(leftValue, seededRight, config);
-            if (result == Integer.MIN_VALUE) continue;
-            rowValues[rightCol]         = seededRight;
-            rowValues[resultCol]        = result;
-            rowOperators[equationIndex] = op;
-            return true;
-        }
-        return false;
-    }
-
-    private boolean fillEquationWithFreeRight(
-            int[] rowValues, Operator[] rowOperators, int equationIndex,
-            int leftValue, int rightCol, int resultCol,
-            Map<Character, Integer> usageCounts) {
-
-        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
-            for (int rightValue : op.validRightOperands(leftValue, config, random)) {
-                int result = op.apply(leftValue, rightValue, config);
-                if (result == Integer.MIN_VALUE) continue;
-                rowValues[rightCol]         = rightValue;
-                rowValues[resultCol]        = result;
-                rowOperators[equationIndex] = op;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // ── Phase 2: derive a constrained row — backtracking ──────────────────────
-
-    private record ColumnCandidate(Operator operator, int derivedValue) {}
-
-    /**
-     * Derives row {@code 2*equationIndex+2} from the two rows above it.
-     * Uses backtracking with early pruning at result columns to avoid
-     * propagating dead-end assignments to later columns.
-     */
-    private boolean deriveRow(PuzzleGrid grid, int equationIndex,
-                               Map<Character, Integer> usageCounts) {
-        int topRow    = equationIndex * 2;
-        int bottomRow = topRow + 1;
-        int derivedRow = topRow + 2;
-        int matrixSize       = config.matrixSize;
-        int equationsPerLine = config.equationsPerLine;
-
-        for (int retry = 0; retry < DERIVE_ROW_VARIETY_RETRIES; retry++) {
-
-            List<List<ColumnCandidate>> candidatesPerColumn =
-                buildColumnCandidates(grid, topRow, bottomRow, matrixSize, usageCounts);
-
-            if (candidatesPerColumn.stream().anyMatch(List::isEmpty)) continue;
-
-            int[]      tryIndex        = new int[matrixSize];
-            int[]      derivedValues   = new int[matrixSize];
-            Operator[] columnOperators = new Operator[matrixSize];
-            int column = 0;
-
-            while (column >= 0) {
-
-                if (column == matrixSize) {
-                    Operator[] hOps = buildHorizontalOperators(derivedValues, equationsPerLine);
-                    if (hOps == null) {
-                        column = matrixSize - 1;
-                        continue;
-                    }
-                    for (int col = 0; col < matrixSize; col++) {
-                        grid.verticalOperators[col][equationIndex] = columnOperators[col];
-                        grid.numbers[derivedRow][col]              = derivedValues[col];
-                    }
-                    System.arraycopy(hOps, 0, grid.horizontalOperators[derivedRow], 0, equationsPerLine);
-                    updateUsageCounts(usageCounts, columnOperators);
-                    updateUsageCounts(usageCounts, hOps);
-                    return true;
-                }
-
-                List<ColumnCandidate> candidates    = candidatesPerColumn.get(column);
-                boolean              advancedColumn = false;
-
-                while (tryIndex[column] < candidates.size()) {
-                    ColumnCandidate pick = candidates.get(tryIndex[column]++);
-                    columnOperators[column] = pick.operator();
-                    derivedValues[column]   = pick.derivedValue();
-
-                    // Early pruning: at result columns, check horizontal equation immediately
-                    boolean isResultColumn = column >= 2 && column % 2 == 0;
-                    if (isResultColumn) {
-                        Operator check = registry.findOperatorForResult(
-                            derivedValues[column - 2],
-                            derivedValues[column - 1],
-                            derivedValues[column]);
-                        if (check == null) continue;
-                    }
-                    advancedColumn = true;
-                    break;
-                }
-
-                if (advancedColumn) {
-                    column++;
-                } else {
-                    tryIndex[column] = 0;
-                    column--;
-                }
-            }
-        }
-        return false;
-    }
-
-    private List<List<ColumnCandidate>> buildColumnCandidates(
-            PuzzleGrid grid, int topRow, int bottomRow, int matrixSize,
-            Map<Character, Integer> usageCounts) {
-
-        List<Operator>              ordered = operatorsByAscendingUsageWithJitter(usageCounts);
-        List<List<ColumnCandidate>> result  = new ArrayList<>(matrixSize);
-
-        for (int col = 0; col < matrixSize; col++) {
-            int topValue    = grid.numbers[topRow][col];
-            int bottomValue = grid.numbers[bottomRow][col];
-            List<ColumnCandidate> candidates = new ArrayList<>();
-            for (Operator op : ordered) {
-                int derived = op.apply(topValue, bottomValue, config);
-                if (derived != Integer.MIN_VALUE) {
-                    candidates.add(new ColumnCandidate(op, derived));
-                }
-            }
-            result.add(candidates);
-        }
-        return result;
-    }
-
-    private Operator[] buildHorizontalOperators(int[] derivedValues, int equationsPerLine) {
-        Operator[] ops = new Operator[equationsPerLine];
-        for (int eq = 0; eq < equationsPerLine; eq++) {
-            int leftCol   = eq * 2;
-            int rightCol  = leftCol + 1;
-            int resultCol = leftCol + 2;
-            Operator op = registry.findOperatorForResult(
-                derivedValues[leftCol], derivedValues[rightCol], derivedValues[resultCol]);
-            if (op == null) return null;
-            ops[eq] = op;
-        }
-        return ops;
-    }
-
-    // ── Operator ordering ─────────────────────────────────────────────────────
-
-    private List<Operator> operatorsByAscendingUsage(Map<Character, Integer> usageCounts) {
-        List<Operator> sorted = registry.all();
-        sorted.sort(Comparator.comparingInt(op -> usageCounts.getOrDefault(op.symbol(), 0)));
-        return sorted;
-    }
-
-    private List<Operator> operatorsByAscendingUsageWithJitter(Map<Character, Integer> usageCounts) {
-        List<Operator> shuffled = registry.all();
-        Collections.shuffle(shuffled, random);
-        shuffled.sort(Comparator.comparingInt(op -> usageCounts.getOrDefault(op.symbol(), 0)));
-        return shuffled;
-    }
-
-    /**
-     * Orders operators by ascending usage, but gives a bonus to rare/restrictive
-     * operators (Exp, Log, Sqrt, Modulo) so they get tried first when they have
-     * zero or low usage. This improves operator diversity in high-level puzzles.
-     */
-    private List<Operator> operatorsByAscendingUsageWithRarityBoost(Map<Character, Integer> usageCounts) {
-        List<Operator> sorted = registry.all();
-        Collections.shuffle(sorted, random);
-        sorted.sort(Comparator.comparingInt(op -> {
-            int usage = usageCounts.getOrDefault(op.symbol(), 0);
-            int priority = operatorSeedPriority(op);
-            return usage * 10 - priority;
-        }));
-        return sorted;
-    }
-
-    // ── Usage counting ─────────────────────────────────────────────────────────
-
-    private static void updateUsageCounts(Map<Character, Integer> usageCounts, Operator[] ops) {
-        for (Operator op : ops) {
-            usageCounts.merge(op.symbol(), 1, Integer::sum);
-        }
-    }
-
     private OperatorUsageReport countOperatorUsage(PuzzleGrid grid) {
         Map<Character, Integer> counts = new LinkedHashMap<>();
         for (Operator op : registry.all()) counts.put(op.symbol(), 0);
-        for (int row = 0; row < config.matrixSize; row++)
-            for (int eq = 0; eq < config.equationsPerLine; eq++)
-                counts.merge(grid.horizontalOperators[row][eq].symbol(), 1, Integer::sum);
-        for (int col = 0; col < config.matrixSize; col++)
-            for (int eq = 0; eq < config.equationsPerLine; eq++)
-                counts.merge(grid.verticalOperators[col][eq].symbol(), 1, Integer::sum);
+        for (EquationArm arm : grid.shape.arms()) {
+            if (arm.operator() != null) {
+                counts.merge(arm.operator().symbol(), 1, Integer::sum);
+            }
+        }
         return new OperatorUsageReport(counts);
     }
 
     private record OperatorUsageReport(Map<Character, Integer> countBySymbol) {
-
         boolean meetsMinimum(int minimumCount) {
             if (minimumCount <= 0) return true;
-            return countBySymbol.values().stream().allMatch(count -> count >= minimumCount);
+            return countBySymbol.values().stream().allMatch(c -> c >= minimumCount);
         }
-
         String summary() {
             StringBuilder sb = new StringBuilder("{");
             countBySymbol.forEach((sym, cnt) -> sb.append(sym).append("=").append(cnt).append(", "));
@@ -508,18 +379,7 @@ public class CrossMathGenerator {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private int nextOperand() {
-        return picker.next();
-    }
-
-    private int seededOrRandom(int[] seeds, int column) {
-        if (seeds != null && seeds[column] != Integer.MIN_VALUE) {
-            return seeds[column];
-        }
-        return nextOperand();
-    }
+    // ── Verification helper ─────────────────────────────────────────────────
 
     private static void assertVerified(PuzzleGrid grid) {
         if (!grid.verify()) {
@@ -527,172 +387,23 @@ public class CrossMathGenerator {
         }
     }
 
-    // ── Shape-based generation ───────────────────────────────────────────────
-
-    private PuzzleGrid tryFillShape(PuzzleShape shape) {
-        PuzzleGrid grid = new PuzzleGrid(config, shape);
-        Map<Character, Integer> usageCounts = initialUsageCounts();
-
-        // Phase 1: seed all intersection cells with values
-        List<GridCell> intersections = new ArrayList<>(shape.intersections());
-        List<Operator> operators = registry.all();
-
-        // Prioritize rare operators (unary, high-constraint) for early intersections
-        List<Operator> seedOrder = new ArrayList<>(operators);
-        seedOrder.sort((a, b) -> {
-            int scoreA = operatorSeedPriority(a);
-            int scoreB = operatorSeedPriority(b);
-            return Integer.compare(scoreB, scoreA);
-        });
-
-        for (int i = 0; i < intersections.size(); i++) {
-            GridCell cell = intersections.get(i);
-            Operator targetOp = seedOrder.get(i % seedOrder.size());
-
-            int value = picker.next();
-            int safetyLimit = 100;
-            while (safetyLimit-- > 0) {
-                List<Integer> validRights = targetOp.validRightOperands(value, config, random);
-                if (!validRights.isEmpty()) break;
-                value = picker.next();
-            }
-            grid.setCellValue(cell, value);
+    private void validateUsageFeasibility() {
+        // Reject impossible operator quotas before burning generation attempts.
+        int requiredArms = minimumArmsRequiredByUsage();
+        if (requiredArms > config.targetEquationCount) {
+            throw new IllegalArgumentException(
+                "minUsagePerOperator=" + config.minUsagePerOperator +
+                " with " + registry.size() + " operators requires at least " +
+                requiredArms + " arms, but targetEquationCount=" +
+                config.targetEquationCount + ".");
         }
-
-        // Phase 2: fill each arm independently
-        for (EquationArm arm : shape.arms()) {
-            if (!fillArm(grid, arm, usageCounts)) {
-                return null;
-            }
-        }
-
-        return grid;
     }
 
-    private static int operatorSeedPriority(Operator op) {
-        return switch (op.symbol()) {
-            case 'L' -> 5;  // log: very restrictive domain
-            case '^' -> 4;  // exp: needs small base
-            case 'r' -> 3;  // sqrt: needs perfect squares
-            case '%' -> 2;  // modulo: needs left > right
-            case '/' -> 1;  // divide: needs exact divisibility
-            default  -> 0;
-        };
+    private int minimumArmsRequired() {
+        return Math.max(2, minimumArmsRequiredByUsage());
     }
 
-    private boolean fillArm(PuzzleGrid grid, EquationArm arm,
-                            Map<Character, Integer> usageCounts) {
-        List<GridCell> operands = arm.operandCells();
-        List<Operator> armOps = new ArrayList<>();
-
-        int running = grid.getCellValue(operands.get(0));
-
-        for (int i = 1; i < operands.size(); i++) {
-            GridCell cell = operands.get(i);
-            boolean hasValue = grid.hasCellValue(cell);
-
-            if (hasValue) {
-                int fixedValue = grid.getCellValue(cell);
-                Operator op = findOperatorForPair(running, fixedValue, usageCounts);
-                if (op == null) return false;
-                int result = op.apply(running, fixedValue, config);
-                if (result == Integer.MIN_VALUE) return false;
-                armOps.add(op);
-                running = result;
-            } else {
-                boolean filled = false;
-                for (Operator op : operatorsByAscendingUsageWithRarityBoost(usageCounts)) {
-                    List<Integer> rights = op.validRightOperands(running, config, random);
-                    for (int rightValue : rights) {
-                        int result = op.apply(running, rightValue, config);
-                        if (result != Integer.MIN_VALUE) {
-                            grid.setCellValue(cell, rightValue);
-                            armOps.add(op);
-                            running = result;
-                            filled = true;
-                            break;
-                        }
-                    }
-                    if (filled) break;
-                }
-                if (!filled) return false;
-            }
-        }
-
-        grid.setCellValue(arm.resultCell(), running);
-        grid.setArmOperators(arm, armOps);
-
-        for (Operator op : armOps) {
-            usageCounts.merge(op.symbol(), 1, Integer::sum);
-        }
-        return true;
-    }
-
-    private Operator findOperatorForPair(int left, int right,
-                                          Map<Character, Integer> usageCounts) {
-        for (Operator op : operatorsByAscendingUsage(usageCounts)) {
-            if (op.apply(left, right, config) != Integer.MIN_VALUE) {
-                return op;
-            }
-        }
-        return null;
-    }
-
-    // ── Duplicate equation detection ──────────────────────────────────────────
-
-    private record EquationTriple(int left, char op, int right) {}
-
-    private static EquationTriple normalizeTriple(int left, char op, int right) {
-        if (op == '+' || op == '*') {
-            return new EquationTriple(Math.min(left, right), op, Math.max(left, right));
-        }
-        return new EquationTriple(left, op, right);
-    }
-
-    private boolean hasDuplicateEquationsFixedGrid(PuzzleGrid grid) {
-        Set<EquationTriple> seen = new HashSet<>();
-        for (int row = 0; row < config.matrixSize; row++) {
-            for (int eq = 0; eq < config.equationsPerLine; eq++) {
-                int left  = grid.numbers[row][eq * 2];
-                int right = grid.numbers[row][eq * 2 + 1];
-                char sym  = grid.horizontalOperators[row][eq].symbol();
-                if (!seen.add(normalizeTriple(left, sym, right))) return true;
-            }
-        }
-        for (int col = 0; col < config.matrixSize; col++) {
-            for (int eq = 0; eq < config.equationsPerLine; eq++) {
-                int top    = grid.numbers[eq * 2][col];
-                int bottom = grid.numbers[eq * 2 + 1][col];
-                char sym   = grid.verticalOperators[col][eq].symbol();
-                if (!seen.add(normalizeTriple(top, sym, bottom))) return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean hasDuplicateEquationsShape(PuzzleGrid grid, PuzzleShape shape) {
-        Set<EquationTriple> seen = new HashSet<>();
-        for (EquationArm arm : shape.arms()) {
-            List<GridCell> operands = arm.operandCells();
-            List<Operator> ops = grid.getArmOperators(arm);
-            for (int i = 0; i < ops.size(); i++) {
-                int left  = grid.getCellValue(operands.get(i));
-                int right = grid.getCellValue(operands.get(i + 1));
-                char sym  = ops.get(i).symbol();
-                if (!seen.add(normalizeTriple(left, sym, right))) return true;
-            }
-        }
-        return false;
-    }
-
-    private Map<Character, Integer> countShapeOperatorUsage(PuzzleGrid grid, PuzzleShape shape) {
-        Map<Character, Integer> counts = new LinkedHashMap<>();
-        for (Operator op : registry.all()) counts.put(op.symbol(), 0);
-        for (EquationArm arm : shape.arms()) {
-            for (Operator op : grid.getArmOperators(arm)) {
-                counts.merge(op.symbol(), 1, Integer::sum);
-            }
-        }
-        return counts;
+    private int minimumArmsRequiredByUsage() {
+        return Math.max(0, config.minUsagePerOperator) * registry.size();
     }
 }

@@ -1,16 +1,27 @@
 package io.crossmath.engine;
 
 /**
- * A cell position in the number matrix, using matrix coordinates.
- * Row and column are indices into the {@code matrixSize × matrixSize} grid
- * where number cells live at even-row, even-column positions in the display.
+ * A cell position in the number matrix (not the display grid).
+ * Row and column are zero-based indices in [0, matrixSize).
  */
-public record GridCell(int row, int col) implements Comparable<GridCell> {
+public record GridCell(int row, int col) {
 
-    @Override
-    public int compareTo(GridCell other) {
-        int cmp = Integer.compare(this.row, other.row);
-        return cmp != 0 ? cmp : Integer.compare(this.col, other.col);
+    public GridCell step(ArmDirection direction) {
+        return switch (direction) {
+            case HORIZONTAL -> new GridCell(row, col + 1);
+            case VERTICAL   -> new GridCell(row + 1, col);
+        };
+    }
+
+    public GridCell stepBack(ArmDirection direction) {
+        return switch (direction) {
+            case HORIZONTAL -> new GridCell(row, col - 1);
+            case VERTICAL   -> new GridCell(row - 1, col);
+        };
+    }
+
+    public boolean inBounds(int matrixSize) {
+        return row >= 0 && row < matrixSize && col >= 0 && col < matrixSize;
     }
 
     @Override

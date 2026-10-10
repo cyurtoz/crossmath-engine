@@ -29,7 +29,6 @@ public class AddOperator implements Operator {
     public int apply(int leftOperand, int rightOperand, PuzzleConfig config) {
         if (leftOperand  < config.minCellValue) return Integer.MIN_VALUE;
         if (rightOperand < config.minCellValue) return Integer.MIN_VALUE;
-        if (config.avoidCarry && hasCarry(leftOperand, rightOperand)) return Integer.MIN_VALUE;
 
         int sum = leftOperand + rightOperand;
 
@@ -37,10 +36,6 @@ public class AddOperator implements Operator {
             return Integer.MIN_VALUE;
         }
         return sum;
-    }
-
-    private static boolean hasCarry(int a, int b) {
-        return (a % 10) + (b % 10) >= 10;
     }
 
     /**
@@ -55,7 +50,6 @@ public class AddOperator implements Operator {
         int maxRight = config.maxCellValue - leftOperand;
 
         for (int right = config.minCellValue; right <= maxRight; right++) {
-            if (config.avoidCarry && hasCarry(leftOperand, right)) continue;
             valid.add(right);
         }
 

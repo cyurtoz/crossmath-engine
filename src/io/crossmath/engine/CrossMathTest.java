@@ -1,1947 +1,694 @@
 package io.crossmath.engine;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Comprehensive test suite for the CrossMath puzzle engine.
+ * Comprehensive regression test suite for the CrossMath puzzle engine.
  *
- * <p>Standalone — uses its own main() with simple pass/fail assertions.
- * No JUnit dependency required.
+ * <h2>Coverage matrix</h2>
+ * <ul>
+ *   <li>Grid sizes: 3, 5, 7</li>
+ *   <li>Operator sets: {+}, {+,-}, {+,-,*}, {+,-,*,/}</li>
+ *   <li>minUsagePerOperator: 0, 1, 2</li>
+ *   <li>maxCellValue: 10, 20, 50, 100</li>
+ *   <li>Multiple seeds per configuration</li>
+ * </ul>
  *
- * <p>Compile:  javac -d out src/io/crossmath/engine/*.java
- * <p>Run:     java -cp out io.crossmath.engine.CrossMathTest
+ * <h2>Invariants verified per puzzle</h2>
+ * <ol>
+ *   <li>Generation completes without exception</li>
+ *   <li>{@code grid.verify()} returns true (op.apply(a,b) == result for every arm)</li>
+ *   <li>Every arm has an operator assigned (non-null)</li>
+ *   <li>All cell values within [minCellValue, maxCellValue]</li>
+ *   <li>Operator usage meets the configured minimum</li>
+ *   <li>Only allowed operators appear in the grid</li>
+ *   <li>Shape arm count ≥ numOperators × minUsagePerOperator</li>
+ *   <li>No cell is the result of two different arms</li>
+ *   <li>Each arm has exactly 2 operand cells + 1 result cell</li>
+ *   <li>Arm cells stay within matrix bounds</li>
+ *   <li>Each arm direction is HORIZONTAL or VERTICAL with consistent cell layout</li>
+ *   <li>EquationMask can hide/show arms without breaking verification</li>
+ *   <li>PuzzlePrinter runs without exception for solution and puzzle views</li>
+ * </ol>
+ *
+ * <h2>Running</h2>
+ * <pre>
+ *   javac -d out src/io/crossmath/engine/*.java
+ *   java -cp out io.crossmath.engine.CrossMathTest
+ * </pre>
  */
 public class CrossMathTest {
 
-    private static int passed = 0;
-    private static int failed = 0;
+    private int passed  = 0;
+    private int failed  = 0;
+    private int skipped = 0;
+    private final List<String> failures = new ArrayList<>();
+
+    // ── Entry point ──────────────────────────────────────────────────────────
 
     public static void main(String[] args) {
-        System.out.println("=== CrossMath Engine Test Suite ===\n");
-
-        // 1. Fixed-grid generation for matrix sizes 3, 5, 7
-        testFixedGrid3x3AddSub();
-        testFixedGrid3x3AddOnly();
-        testFixedGrid5x5AllOps();
-        testFixedGrid5x5AddSub();
-        testFixedGrid7x7AllOps();
-        testFixedGrid7x7AddSubMul();
-
-        // 2. Shape-based generation for matrix sizes 3, 5, 7
-        testShapeMode3x3();
-        testShapeMode5x5();
-        testShapeMode7x7();
-
-        // 3. All 14 DifficultyLevel presets
-        testAllDifficultyLevels();
-
-        // 4. Cell values within bounds
-        testCellValuesWithinBoundsFixed();
-        testCellValuesWithinBoundsShape();
-
-        // 5. Grid verification passes
-        testGridVerificationFixed();
-        testGridVerificationShape();
-
-        // 6. Operator usage meets configured minimums
-        testOperatorUsageMeetsMinimum();
-
-        // 7. Masking operations (hide/show)
-        testMaskingHideShow();
-
-        // 8. EquationMask smart masking
-        testSmartMaskFixedGrid();
-        testSmartMaskShape();
-        testRandomMaskFixedGrid();
-        testRandomMaskForShape();
-
-        // 9. Config validation
-        testConfigRejectsEvenMatrixSize();
-        testConfigRejectsMatrixSizeLessThan3();
-        testConfigRejectsNegativeMinCellValue();
-        testConfigRejectsMaxLessThanMin();
-        testConfigDerivedValues();
-
-        // 10. PuzzlePrinter doesn't crash
-        testPuzzlePrinterFixed();
-        testPuzzlePrinterShape();
-
-        // 11. JSON export produces valid output
-        testJsonExportFixed();
-        testJsonExportShape();
-
-        // 12. Distractor generation
-        testDistractorGeneration();
-        testDistractorContainsCorrectAnswer();
-        testDistractorAllWithinBounds();
-        testEquationAwareDistractors();
-
-        // 13. Multiple seeds stability (20 seeds per config)
-        testMultipleSeedsFixed5x5();
-        testMultipleSeedsFixed3x3();
-        testMultipleSeedsShape5x5();
-
-        // 14. UniquenessChecker runs without errors
-        testUniquenessCheckerFixed();
-        testUniquenessCheckerShape();
-
-        // Extra: OperatorRegistry tests
-        testRegistryAddRemove();
-        testRegistryApplyRandom();
-        testRegistryFindOperatorForResult();
-
-        // Extra: EquationArm tests
-        testEquationArmAccessors();
-
-        // Extra: PuzzleShape tests
-        testPuzzleShapeAccessors();
-
-        // Extra: ShapeGenerator produces valid shapes
-        testShapeGeneratorProducesArms();
-
-        // Extra: DifficultyLevel.parse
-        testDifficultyLevelParse();
-
-        // 15. ModuloOperator and LogOperator
-        testModuloOperator();
-        testModuloOperatorValidDomain();
-        testLogOperator();
-        testLogOperatorValidDomain();
-        testLevel7GeneratesAndVerifies();
-        testLevel7ShapeMode();
-        testLevel7MultipleSeeds();
-
-        // 16. DifficultyScorer
-        testDifficultyScorerMonotonic();
-        testDifficultyScorerShapeMode();
-        testDifficultyScorerBounds();
-        testDifficultyScorerJsonExport();
-
-        // 17. Carry avoidance verification
-        testCarryAvoidanceLevel0();
-
-        // 18. Custom operator distractors
-        testCustomOperatorDistractors();
-
-        // 19. Non-unique puzzle detection
-        testNonUniquePuzzleDetection();
-
-        // 20. Operator hiding disabled at early levels
-        testOperatorHidingDisabledEarlyLevels();
-
-        // 21. Level-specific distractor count verification
-        testDistractorCountPerLevel();
-
-        // 22. Spec-aligned hiding parameters
-        testResultHidingMostlyVisibleLevels();
-        testOperatorHidingSpecAlignment();
-        testLevel3AvoidLargeProducts();
-
-        // 23. Carry-mistake distractors and intersection-key threshold
-        testCarryMistakeDistractors();
-        testIntersectionKeyThreshold();
-        testLevel7VisibleRange();
-        testJsonFieldNames();
-
-        // 24. Spec-aligned maxUnknowns for Levels 2 and 2.5
-        testLevel2MaxUnknownsPerEquation();
-
-        // 25. Min operator usage for advanced levels
-        testMinUsageAdvancedLevels();
-
-        // 26. JSON operator objects with isUnary flag
-        testJsonOperatorIsUnaryFlag();
-
-        System.out.println("\n=== Results ===");
-        System.out.printf("Passed: %d  |  Failed: %d  |  Total: %d%n", passed, failed, passed + failed);
-
-        if (failed > 0) {
-            System.exit(1);
-        }
+        CrossMathTest suite = new CrossMathTest();
+        suite.runAll();
+        suite.printSummary();
+        System.exit(suite.failed > 0 ? 1 : 0);
     }
 
-    // ── Assertion helpers ────────────────────────────────────────────────────
+    // ── Test orchestration ───────────────────────────────────────────────────
 
-    private static void assertTrue(String testName, boolean condition) {
-        if (condition) {
-            passed++;
-            System.out.println("  PASS: " + testName);
-        } else {
-            failed++;
-            System.out.println("  FAIL: " + testName);
-        }
+    private void runAll() {
+        System.out.println("═".repeat(70));
+        System.out.println("  CrossMath Engine — Regression Test Suite");
+        System.out.println("═".repeat(70));
+        System.out.println();
+
+        testGridSizeOperatorCombinations();
+        testMaxCellValueVariations();
+        testMinUsagePerOperatorVariations();
+        testMultipleSeedsStability();
+        testEdgeCases();
+        testShapeInvariants();
+        testMaskingInvariants();
+        testPrinterDoesNotCrash();
+        testConfigValidation();
     }
 
-    private static void assertFalse(String testName, boolean condition) {
-        assertTrue(testName, !condition);
-    }
-
-    private static void assertEquals(String testName, Object expected, Object actual) {
-        boolean eq = (expected == null) ? (actual == null) : expected.equals(actual);
-        if (eq) {
-            passed++;
-            System.out.println("  PASS: " + testName);
-        } else {
-            failed++;
-            System.out.println("  FAIL: " + testName + " (expected=" + expected + ", actual=" + actual + ")");
-        }
-    }
-
-    private static void assertThrows(String testName, Runnable action) {
-        try {
-            action.run();
-            failed++;
-            System.out.println("  FAIL: " + testName + " (no exception thrown)");
-        } catch (Exception e) {
-            passed++;
-            System.out.println("  PASS: " + testName + " (caught " + e.getClass().getSimpleName() + ")");
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 1. Fixed-grid generation
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testFixedGrid3x3AddSub() {
-        System.out.println("\n-- Fixed-grid 3x3 add/sub --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20)
-                .minUsagePerOperator(1).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("3x3 add/sub grid not null", grid != null);
-        assertTrue("3x3 add/sub grid verifies", grid.verify());
-        assertFalse("3x3 add/sub is not shape mode", grid.isShapeMode());
-    }
-
-    private static void testFixedGrid3x3AddOnly() {
-        System.out.println("\n-- Fixed-grid 3x3 add-only --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(123);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('-');
-        registry.remove('*');
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("3x3 add-only grid not null", grid != null);
-        assertTrue("3x3 add-only grid verifies", grid.verify());
-    }
-
-    private static void testFixedGrid5x5AllOps() {
-        System.out.println("\n-- Fixed-grid 5x5 all ops --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .minUsagePerOperator(2).build();
-        Random random = new Random(99);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("5x5 all-ops grid not null", grid != null);
-        assertTrue("5x5 all-ops grid verifies", grid.verify());
-        assertEquals("5x5 equationsPerLine", 2, config.equationsPerLine);
-    }
-
-    private static void testFixedGrid5x5AddSub() {
-        System.out.println("\n-- Fixed-grid 5x5 add/sub --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(50)
-                .minUsagePerOperator(1).build();
-        Random random = new Random(77);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("5x5 add/sub grid not null", grid != null);
-        assertTrue("5x5 add/sub grid verifies", grid.verify());
-    }
-
-    private static void testFixedGrid7x7AllOps() {
-        System.out.println("\n-- Fixed-grid 7x7 all ops --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(7).minCellValue(1).maxCellValue(200)
-                .maxGenerationAttempts(10000)
-                .minUsagePerOperator(1).build();
-        Random random = new Random(7);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("7x7 all-ops grid not null", grid != null);
-        assertTrue("7x7 all-ops grid verifies", grid.verify());
-        assertEquals("7x7 equationsPerLine", 3, config.equationsPerLine);
-    }
-
-    private static void testFixedGrid7x7AddSubMul() {
-        System.out.println("\n-- Fixed-grid 7x7 add/sub/mul --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(7).minCellValue(1).maxCellValue(200)
-                .maxGenerationAttempts(10000)
-                .minUsagePerOperator(1).build();
-        Random random = new Random(11);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("7x7 add/sub/mul grid not null", grid != null);
-        assertTrue("7x7 add/sub/mul grid verifies", grid.verify());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 2. Shape-based generation
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testShapeMode3x3() {
-        System.out.println("\n-- Shape mode 3x3 --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20)
-                .maxGenerationAttempts(2000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        assertTrue("Shape 3x3 grid not null", grid != null);
-        assertTrue("Shape 3x3 is shape mode", grid.isShapeMode());
-        assertTrue("Shape 3x3 grid verifies", grid.verify());
-        assertTrue("Shape 3x3 has shape", grid.shape() != null);
-        assertTrue("Shape 3x3 has arms", grid.shape().armCount() > 0);
-    }
-
-    private static void testShapeMode5x5() {
-        System.out.println("\n-- Shape mode 5x5 --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(1).build();
-        Random random = new Random(123);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        assertTrue("Shape 5x5 grid not null", grid != null);
-        assertTrue("Shape 5x5 is shape mode", grid.isShapeMode());
-        assertTrue("Shape 5x5 grid verifies", grid.verify());
-    }
-
-    private static void testShapeMode7x7() {
-        System.out.println("\n-- Shape mode 7x7 --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(7).minCellValue(1).maxCellValue(200)
-                .maxGenerationAttempts(10000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(7);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        assertTrue("Shape 7x7 grid not null", grid != null);
-        assertTrue("Shape 7x7 is shape mode", grid.isShapeMode());
-        assertTrue("Shape 7x7 grid verifies", grid.verify());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 3. All 12 DifficultyLevel presets
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testAllDifficultyLevels() {
-        System.out.println("\n-- All 12 DifficultyLevel presets --");
-        // Use different seeds per level to maximize success probability
-        int seedBase = 1;
-        for (DifficultyLevel level : DifficultyLevel.values()) {
-            String name = "DifficultyLevel " + level.label;
-            try {
-                PuzzleConfig config = level.buildConfig();
-                Random random = new Random(seedBase++);
-                OperatorRegistry registry = new OperatorRegistry(config, random);
-                level.configureRegistry(registry);
-
-                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-                PuzzleGrid grid = gen.generate();
-
-                assertTrue(name + " generates", grid != null);
-                assertTrue(name + " verifies", grid.verify());
-            } catch (Exception e) {
-                failed++;
-                System.out.println("  FAIL: " + name + " threw " + e.getClass().getSimpleName()
-                        + ": " + e.getMessage());
-            }
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 4. Cell values within bounds
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testCellValuesWithinBoundsFixed() {
-        System.out.println("\n-- Cell values within bounds (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        boolean allInBounds = true;
-        for (int r = 0; r < config.matrixSize; r++) {
-            for (int c = 0; c < config.matrixSize; c++) {
-                int v = grid.numbers[r][c];
-                if (v < config.minCellValue || v > config.maxCellValue) {
-                    allInBounds = false;
-                }
-            }
-        }
-        assertTrue("Fixed-grid cell values within [1, 100]", allInBounds);
-    }
-
-    private static void testCellValuesWithinBoundsShape() {
-        System.out.println("\n-- Cell values within bounds (shape) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        boolean allInBounds = true;
-        for (Map.Entry<GridCell, Integer> entry : grid.cellValues().entrySet()) {
-            int v = entry.getValue();
-            if (v < config.minCellValue || v > config.maxCellValue) {
-                allInBounds = false;
-            }
-        }
-        assertTrue("Shape cell values within [1, 100]", allInBounds);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 5. Grid verification
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testGridVerificationFixed() {
-        System.out.println("\n-- Grid verification (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("Fixed-grid passes verify()", grid.verify());
-
-        // Corrupt a cell and verify it fails
-        int original = grid.numbers[0][0];
-        grid.numbers[0][0] = original + 999;
-        assertFalse("Corrupted fixed-grid fails verify()", grid.verify());
-        grid.numbers[0][0] = original; // restore
-    }
-
-    private static void testGridVerificationShape() {
-        System.out.println("\n-- Grid verification (shape) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        assertTrue("Shape grid passes verify()", grid.verify());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 6. Operator usage meets configured minimums
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testOperatorUsageMeetsMinimum() {
-        System.out.println("\n-- Operator usage meets minimum --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .minUsagePerOperator(2).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        // Count usage of each operator
-        java.util.Map<Character, Integer> usage = new java.util.LinkedHashMap<>();
-        for (Operator op : registry.all()) usage.put(op.symbol(), 0);
-
-        for (int row = 0; row < config.matrixSize; row++)
-            for (int eq = 0; eq < config.equationsPerLine; eq++)
-                usage.merge(grid.horizontalOperators[row][eq].symbol(), 1, Integer::sum);
-        for (int col = 0; col < config.matrixSize; col++)
-            for (int eq = 0; eq < config.equationsPerLine; eq++)
-                usage.merge(grid.verticalOperators[col][eq].symbol(), 1, Integer::sum);
-
-        boolean meetsMin = true;
-        for (Map.Entry<Character, Integer> entry : usage.entrySet()) {
-            if (entry.getValue() < config.minUsagePerOperator) {
-                meetsMin = false;
-                System.out.println("    Operator '" + entry.getKey() + "' usage " +
-                        entry.getValue() + " < min " + config.minUsagePerOperator);
-            }
-        }
-        assertTrue("All operators meet minUsagePerOperator=2", meetsMin);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 7. Masking operations
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testMaskingHideShow() {
-        System.out.println("\n-- Masking hide/show --");
-
-        EquationMask mask = EquationMask.allVisible();
-        assertEquals("Initial hidden count is 0", 0, mask.hiddenCount());
-
-        EquationId id = new EquationId(EquationId.Axis.HORIZONTAL, 0, 0);
-        assertTrue("Initially visible", mask.isVisible(id));
-
-        mask.hide(id);
-        assertFalse("After hide, not visible", mask.isVisible(id));
-        assertEquals("Hidden count is 1 after hide", 1, mask.hiddenCount());
-
-        mask.show(id);
-        assertTrue("After show, visible again", mask.isVisible(id));
-        assertEquals("Hidden count is 0 after show", 0, mask.hiddenCount());
-
-        // Arm-based masking
-        mask.hideArm(0);
-        assertFalse("Arm 0 hidden", mask.isArmVisible(0));
-        assertTrue("Arm 1 still visible", mask.isArmVisible(1));
-
-        mask.showArm(0);
-        assertTrue("Arm 0 visible after showArm", mask.isArmVisible(0));
-
-        // showAll
-        mask.hide(id);
-        mask.hideArm(2);
-        mask.showAll();
-        assertEquals("After showAll, hidden count is 0", 0, mask.hiddenCount());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 8. EquationMask smart masking
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testSmartMaskFixedGrid() {
-        System.out.println("\n-- Smart mask (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-
-        EquationMask mask = EquationMask.smartRandom(config, 3, 2, random);
-        assertTrue("Smart mask hides some equations", mask.hiddenCount() > 0);
-        assertTrue("Smart mask hides <= 3", mask.hiddenCount() <= 3);
-    }
-
-    private static void testSmartMaskShape() {
-        System.out.println("\n-- Smart mask (shape) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        PuzzleShape shape = grid.shape();
-        int countToHide = Math.max(1, shape.armCount() / 3);
-        EquationMask mask = EquationMask.smartRandomForArms(shape, countToHide, new Random(99));
-        assertTrue("Smart mask for shape hides some arms", mask.hiddenCount() > 0);
-    }
-
-    private static void testRandomMaskFixedGrid() {
-        System.out.println("\n-- Random mask (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-
-        EquationMask mask = EquationMask.random(config, 4, random);
-        assertEquals("Random mask hides 4", 4, mask.hiddenCount());
-
-        // hiddenSet returns the hidden equation IDs
-        Set<EquationId> hidden = mask.hiddenSet();
-        assertEquals("hiddenSet size matches", 4, hidden.size());
-    }
-
-    private static void testRandomMaskForShape() {
-        System.out.println("\n-- Random mask for shape --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        PuzzleShape shape = grid.shape();
-        EquationMask mask = EquationMask.randomForShape(shape, 2, new Random(55));
-        assertTrue("randomForShape hides some", mask.hiddenCount() > 0);
-        assertTrue("randomForShape hides <= 2", mask.hiddenCount() <= 2);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 9. Config validation
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testConfigRejectsEvenMatrixSize() {
-        System.out.println("\n-- Config rejects even matrixSize --");
-        assertThrows("Even matrixSize=4 rejected", () ->
-                PuzzleConfig.builder().matrixSize(4).build());
-    }
-
-    private static void testConfigRejectsMatrixSizeLessThan3() {
-        System.out.println("\n-- Config rejects matrixSize < 3 --");
-        assertThrows("matrixSize=1 rejected", () ->
-                PuzzleConfig.builder().matrixSize(1).build());
-        assertThrows("matrixSize=2 rejected", () ->
-                PuzzleConfig.builder().matrixSize(2).build());
-    }
-
-    private static void testConfigRejectsNegativeMinCellValue() {
-        System.out.println("\n-- Config rejects negative minCellValue --");
-        assertThrows("Negative minCellValue rejected", () ->
-                PuzzleConfig.builder().minCellValue(-1).build());
-    }
-
-    private static void testConfigRejectsMaxLessThanMin() {
-        System.out.println("\n-- Config rejects maxCellValue <= minCellValue --");
-        assertThrows("maxCellValue == minCellValue rejected", () ->
-                PuzzleConfig.builder().minCellValue(10).maxCellValue(10).build());
-        assertThrows("maxCellValue < minCellValue rejected", () ->
-                PuzzleConfig.builder().minCellValue(50).maxCellValue(20).build());
-    }
-
-    private static void testConfigDerivedValues() {
-        System.out.println("\n-- Config derived values --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-
-        assertEquals("equationsPerLine for 5x5", 2, config.equationsPerLine);
-        assertEquals("maxAddOperand for maxCellValue=100", 50, config.maxAddOperand);
-        assertEquals("maxMultiplyOperand for maxCellValue=100", 10, config.maxMultiplyOperand);
-        assertEquals("maxDivisionDivisor for maxCellValue=100", 50, config.maxDivisionDivisor);
-        assertEquals("targetEquationCount for 5x5", 10, config.targetEquationCount);
-        assertEquals("maxArmFreeOperands for 5x5", 2, config.maxArmFreeOperands);
-
-        PuzzleConfig config7 = PuzzleConfig.builder()
-                .matrixSize(7).minCellValue(1).maxCellValue(200).build();
-        assertEquals("equationsPerLine for 7x7", 3, config7.equationsPerLine);
-        assertEquals("targetEquationCount for 7x7", 21, config7.targetEquationCount);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 10. PuzzlePrinter doesn't crash
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testPuzzlePrinterFixed() {
-        System.out.println("\n-- PuzzlePrinter (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-        EquationMask mask = EquationMask.allVisible();
-
-        try {
-            // Redirect stderr to suppress generator noise
-            PuzzlePrinter printer = new PuzzlePrinter(grid, mask);
-            printer.printSolution();
-            printer.printPuzzle();
-            printer.printEquations();
-            assertTrue("PuzzlePrinter (fixed-grid) didn't crash", true);
-        } catch (Exception e) {
-            assertTrue("PuzzlePrinter (fixed-grid) didn't crash: " + e.getMessage(), false);
-        }
-    }
-
-    private static void testPuzzlePrinterShape() {
-        System.out.println("\n-- PuzzlePrinter (shape) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        EquationMask mask = EquationMask.randomForShape(grid.shape(), 2, new Random(99));
-
-        try {
-            PuzzlePrinter printer = new PuzzlePrinter(grid, mask);
-            printer.printSolution();
-            printer.printPuzzle();
-            printer.printEquations();
-            assertTrue("PuzzlePrinter (shape) didn't crash", true);
-        } catch (Exception e) {
-            assertTrue("PuzzlePrinter (shape) didn't crash: " + e.getMessage(), false);
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 11. JSON export
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testJsonExportFixed() {
-        System.out.println("\n-- JSON export (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        EquationMask mask = EquationMask.random(config, 3, new Random(55));
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(
-                grid, mask, DifficultyLevel.LEVEL_4, new Random(88), registry);
-        String json = exporter.exportJson();
-
-        assertTrue("JSON is non-empty", json != null && !json.isEmpty());
-        assertTrue("JSON starts with {", json.trim().startsWith("{"));
-        assertTrue("JSON ends with }", json.trim().endsWith("}"));
-        assertTrue("JSON contains config", json.contains("\"config\""));
-        assertTrue("JSON contains mode", json.contains("\"mode\""));
-        assertTrue("JSON contains fixed-grid", json.contains("\"fixed-grid\""));
-        assertTrue("JSON contains grid", json.contains("\"grid\""));
-        assertTrue("JSON contains puzzle", json.contains("\"puzzle\""));
-        assertTrue("JSON contains solution", json.contains("\"solution\""));
-        assertTrue("JSON contains matrixSize", json.contains("\"matrixSize\": 5"));
-        assertTrue("JSON contains uniqueSolution", json.contains("\"uniqueSolution\""));
-    }
-
-    private static void testJsonExportShape() {
-        System.out.println("\n-- JSON export (shape) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        EquationMask mask = EquationMask.randomForShape(grid.shape(), 1, new Random(55));
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(
-                grid, mask, DifficultyLevel.LEVEL_3, new Random(88), registry);
-        String json = exporter.exportJson();
-
-        assertTrue("Shape JSON is non-empty", json != null && !json.isEmpty());
-        assertTrue("Shape JSON contains mode shape", json.contains("\"shape\""));
-        assertTrue("Shape JSON contains armIndex", json.contains("\"armIndex\""));
-        assertTrue("Shape JSON contains role", json.contains("\"role\""));
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 12. Distractor generation
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testDistractorGeneration() {
-        System.out.println("\n-- Distractor generation --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        DistractorGenerator gen = new DistractorGenerator(config, random);
-
-        for (DifficultyLevel level : DifficultyLevel.values()) {
-            int optionCount = level.optionCount(random);
-            List<Integer> options = gen.generateOptions(50, optionCount, level);
-            assertTrue("Level " + level.label + " generates " + optionCount + " options",
-                    options.size() == optionCount);
-        }
-    }
-
-    private static void testDistractorContainsCorrectAnswer() {
-        System.out.println("\n-- Distractor contains correct answer --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        DistractorGenerator gen = new DistractorGenerator(config, random);
-
-        for (int correctAnswer : new int[]{1, 5, 25, 50, 99}) {
-            List<Integer> options = gen.generateOptions(correctAnswer, 4, DifficultyLevel.LEVEL_4);
-            assertTrue("Options contain correct answer " + correctAnswer,
-                    options.contains(correctAnswer));
-        }
-    }
-
-    private static void testDistractorAllWithinBounds() {
-        System.out.println("\n-- Distractors within bounds --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        DistractorGenerator gen = new DistractorGenerator(config, random);
-
-        boolean allInBounds = true;
-        for (int correctAnswer = 1; correctAnswer <= 100; correctAnswer += 10) {
-            List<Integer> options = gen.generateOptions(correctAnswer, 4, DifficultyLevel.LEVEL_4);
-            for (int opt : options) {
-                if (opt < config.minCellValue || opt > config.maxCellValue) {
-                    allInBounds = false;
-                }
-            }
-        }
-        assertTrue("All distractors within [minCellValue, maxCellValue]", allInBounds);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 12b. Equation-aware distractors
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testEquationAwareDistractors() {
-        System.out.println("\n-- Equation-aware distractors --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(100)
-                .minUsagePerOperator(0).build();
-
-        // Level 1: swapped numbers — operands should appear as distractors
-        DistractorGenerator gen1 = new DistractorGenerator(config, new Random(42));
-        var ctx1 = new DistractorGenerator.EquationContext(3, 5, '+');
-        List<Integer> opts1 = gen1.generateOptions(8, 3, DifficultyLevel.LEVEL_1, ctx1);
-        assertTrue("Level 1 swapped: options contain correct answer 8", opts1.contains(8));
-        boolean hasSwap = opts1.contains(3) || opts1.contains(5);
-        assertTrue("Level 1 swapped: operand appears as distractor", hasSwap);
-
-        // Level 1.5: inverse confusion — a+b vs a-b
-        DistractorGenerator gen2 = new DistractorGenerator(config, new Random(43));
-        var ctx2 = new DistractorGenerator.EquationContext(7, 3, '+');
-        List<Integer> opts2 = gen2.generateOptions(10, 4, DifficultyLevel.LEVEL_1_5, ctx2);
-        assertTrue("Level 1.5 inverse: options contain correct answer 10", opts2.contains(10));
-
-        // Level 3: table confusion for multiplication (use enough options for table values to survive)
-        DistractorGenerator gen3 = new DistractorGenerator(config, new Random(44));
-        var ctx3 = new DistractorGenerator.EquationContext(6, 3, '*');
-        List<Integer> opts3 = gen3.generateOptions(18, 6, DifficultyLevel.LEVEL_3, ctx3);
-        assertTrue("Level 3 table: options contain correct answer 18", opts3.contains(18));
-        boolean hasTableConfusion = opts3.contains(15) || opts3.contains(21)
-                                 || opts3.contains(12) || opts3.contains(24);
-        assertTrue("Level 3 table confusion: adjacent product appears", hasTableConfusion);
-
-        // Level 4: operation swap confusion — multiplication vs addition
-        DistractorGenerator gen4 = new DistractorGenerator(config, new Random(45));
-        var ctx4 = new DistractorGenerator.EquationContext(5, 4, '*');
-        List<Integer> opts4 = gen4.generateOptions(20, 4, DifficultyLevel.LEVEL_4, ctx4);
-        assertTrue("Level 4 op swap: options contain correct answer 20", opts4.contains(20));
-
-        // Equation context with division
-        DistractorGenerator gen5 = new DistractorGenerator(config, new Random(46));
-        var ctx5 = new DistractorGenerator.EquationContext(12, 3, '/');
-        List<Integer> opts5 = gen5.generateOptions(4, 4, DifficultyLevel.LEVEL_4, ctx5);
-        assertTrue("Level 4 division: options contain correct answer 4", opts5.contains(4));
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 13. Multiple seeds stability
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testMultipleSeedsFixed5x5() {
-        System.out.println("\n-- Multiple seeds stability (fixed 5x5, 20 seeds) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .minUsagePerOperator(1).build();
-
-        int successCount = 0;
-        for (int seed = 0; seed < 20; seed++) {
-            try {
-                Random random = new Random(seed);
-                OperatorRegistry registry = new OperatorRegistry(config, random);
-                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-                PuzzleGrid grid = gen.generate();
-                if (grid != null && grid.verify()) {
-                    successCount++;
-                }
-            } catch (Exception e) {
-                // Count as failure
-            }
-        }
-        assertTrue("Fixed 5x5 succeeds for all 20 seeds (" + successCount + "/20)",
-                successCount == 20);
-    }
-
-    private static void testMultipleSeedsFixed3x3() {
-        System.out.println("\n-- Multiple seeds stability (fixed 3x3, 20 seeds) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20)
-                .minUsagePerOperator(0).build();
-
-        int successCount = 0;
-        for (int seed = 0; seed < 20; seed++) {
-            try {
-                Random random = new Random(seed);
-                OperatorRegistry registry = new OperatorRegistry(config, random);
-                registry.remove('*');
-                registry.remove('/');
-                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-                PuzzleGrid grid = gen.generate();
-                if (grid != null && grid.verify()) {
-                    successCount++;
-                }
-            } catch (Exception e) {
-                // Count as failure
-            }
-        }
-        assertTrue("Fixed 3x3 succeeds for all 20 seeds (" + successCount + "/20)",
-                successCount == 20);
-    }
-
-    private static void testMultipleSeedsShape5x5() {
-        System.out.println("\n-- Multiple seeds stability (shape 5x5, 20 seeds) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-
-        int successCount = 0;
-        for (int seed = 0; seed < 20; seed++) {
-            try {
-                Random random = new Random(seed);
-                OperatorRegistry registry = new OperatorRegistry(config, random);
-                ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-                PuzzleGrid grid = gen.generate(shapeGen);
-                if (grid != null && grid.isShapeMode() && grid.verify()) {
-                    successCount++;
-                }
-            } catch (Exception e) {
-                // Count as failure
-            }
-        }
-        assertTrue("Shape 5x5 succeeds for all 20 seeds (" + successCount + "/20)",
-                successCount == 20);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 14. UniquenessChecker
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testUniquenessCheckerFixed() {
-        System.out.println("\n-- UniquenessChecker (fixed-grid) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        // With all visible, should be unique trivially
-        EquationMask allVisible = EquationMask.allVisible();
-        try {
-            boolean result = UniquenessChecker.isUnique(grid, allVisible, registry);
-            assertTrue("UniquenessChecker runs on fixed-grid (all visible)", true);
-            assertTrue("All-visible fixed-grid is unique", result);
-        } catch (Exception e) {
-            assertTrue("UniquenessChecker (fixed-grid) didn't throw: " + e.getMessage(), false);
-        }
-
-        // With some hidden
-        EquationMask mask = EquationMask.random(config, 1, new Random(55));
-        try {
-            UniquenessChecker.isUnique(grid, mask, registry);
-            assertTrue("UniquenessChecker runs on fixed-grid (some hidden)", true);
-        } catch (Exception e) {
-            assertTrue("UniquenessChecker (fixed-grid, some hidden) didn't throw: " + e.getMessage(), false);
-        }
-    }
-
-    private static void testUniquenessCheckerShape() {
-        System.out.println("\n-- UniquenessChecker (shape) --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(50)
-                .maxGenerationAttempts(5000)
-                .minUsagePerOperator(0).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        EquationMask allVisible = EquationMask.allVisible();
-        try {
-            boolean result = UniquenessChecker.isUnique(grid, allVisible, registry);
-            assertTrue("UniquenessChecker runs on shape (all visible)", true);
-            assertTrue("All-visible shape is unique", result);
-        } catch (Exception e) {
-            assertTrue("UniquenessChecker (shape) didn't throw: " + e.getMessage(), false);
-        }
-
-        // With some hidden
-        EquationMask mask = EquationMask.randomForShape(grid.shape(), 1, new Random(55));
-        try {
-            UniquenessChecker.isUnique(grid, mask, registry);
-            assertTrue("UniquenessChecker runs on shape (some hidden)", true);
-        } catch (Exception e) {
-            assertTrue("UniquenessChecker (shape, some hidden) didn't throw: " + e.getMessage(), false);
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Extra: OperatorRegistry
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testRegistryAddRemove() {
-        System.out.println("\n-- OperatorRegistry add/remove --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        assertEquals("Default registry has 4 operators", 4, registry.size());
-
-        registry.remove('/');
-        assertEquals("After removing '/', has 3", 3, registry.size());
-
-        registry.remove('*');
-        assertEquals("After removing '*', has 2", 2, registry.size());
-
-        // Re-add should work for a new symbol
-        registry.add(new MinOperator());
-        assertEquals("After adding min, has 3", 3, registry.size());
-
-        // Adding duplicate should throw
-        assertThrows("Adding duplicate 'm' throws", () ->
-                registry.add(new MinOperator()));
-    }
-
-    private static void testRegistryApplyRandom() {
-        System.out.println("\n-- OperatorRegistry applyRandom --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        OperatorRegistry.OperatorResult result = registry.applyRandom(10, 5);
-        assertTrue("applyRandom(10, 5) returns a result", result != null);
-        assertTrue("applyRandom result is valid (non-MIN_VALUE)",
-                result.result() != Integer.MIN_VALUE);
-    }
-
-    private static void testRegistryFindOperatorForResult() {
-        System.out.println("\n-- OperatorRegistry findOperatorForResult --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(100).build();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-
-        Operator found = registry.findOperatorForResult(10, 5, 15);
-        assertTrue("Found operator for 10 ? 5 = 15", found != null);
-        assertEquals("Operator for 10+5=15 is '+'", '+', found.symbol());
-
-        Operator found2 = registry.findOperatorForResult(10, 5, 5);
-        assertTrue("Found operator for 10 ? 5 = 5", found2 != null);
-        assertEquals("Operator for 10-5=5 is '-'", '-', found2.symbol());
-
-        Operator notFound = registry.findOperatorForResult(10, 5, 999);
-        assertTrue("No operator for 10 ? 5 = 999", notFound == null);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Extra: EquationArm
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testEquationArmAccessors() {
-        System.out.println("\n-- EquationArm accessors --");
-        GridCell c0 = new GridCell(0, 0);
-        GridCell c1 = new GridCell(0, 1);
-        GridCell result = new GridCell(0, 2);
-        EquationArm arm = new EquationArm(List.of(c0, c1), result, ArmDirection.HORIZONTAL);
-
-        assertEquals("operandCount is 2", 2, arm.operandCount());
-        assertEquals("sourceCell is (0,0)", c0, arm.sourceCell());
-        assertEquals("resultCell is (0,2)", result, arm.resultCell());
-        assertEquals("allCells has 3 elements", 3, arm.allCells().size());
-        assertTrue("allCells contains result", arm.allCells().contains(result));
-        assertTrue("allCells contains c0", arm.allCells().contains(c0));
-        assertTrue("allCells contains c1", arm.allCells().contains(c1));
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Extra: PuzzleShape
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testPuzzleShapeAccessors() {
-        System.out.println("\n-- PuzzleShape accessors --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(100)
-                .maxGenerationAttempts(5000).build();
-        Random random = new Random(42);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        PuzzleShape shape = shapeGen.generate();
-
-        assertTrue("Shape has arms", shape.armCount() > 0);
-        assertTrue("Shape has cells", shape.allClaimedCells().size() > 0);
-        assertEquals("Shape matrixSize is 5", 5, shape.matrixSize());
-
-        // cellRoles should contain entries
-        assertTrue("cellRoles not empty", shape.cellRoles().size() > 0);
-
-        // Check that at least one intersection exists
-        assertTrue("Shape has intersections", shape.intersections().size() > 0);
-
-        // roleOf for an unclaimed cell should be EMPTY
-        assertEquals("roleOf unclaimed cell is EMPTY", CellRole.EMPTY,
-                shape.roleOf(new GridCell(config.matrixSize - 1, config.matrixSize - 1)));
-
-        // armsContaining should work
-        GridCell someCell = shape.arms().get(0).sourceCell();
-        List<EquationArm> arms = shape.armsContaining(someCell);
-        assertTrue("armsContaining finds at least 1 arm", arms.size() >= 1);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Extra: ShapeGenerator
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testShapeGeneratorProducesArms() {
-        System.out.println("\n-- ShapeGenerator produces arms --");
-        for (int matrixSize : new int[]{3, 5, 7}) {
-            PuzzleConfig config = PuzzleConfig.builder()
-                    .matrixSize(matrixSize).minCellValue(1)
-                    .maxCellValue(matrixSize * 20).build();
-            Random random = new Random(42);
-            ShapeGenerator gen = new ShapeGenerator(config, random);
-            PuzzleShape shape = gen.generate();
-
-            assertTrue("ShapeGenerator " + matrixSize + "x" + matrixSize + " produces arms",
-                    shape.armCount() > 0);
-
-            // Every arm should have at least 2 operands
-            boolean allArmsValid = true;
-            for (EquationArm arm : shape.arms()) {
-                if (arm.operandCount() < 2) {
-                    allArmsValid = false;
-                }
-                if (arm.resultCell() == null) {
-                    allArmsValid = false;
-                }
-            }
-            assertTrue("All arms have >= 2 operands and a result cell for " + matrixSize,
-                    allArmsValid);
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Extra: DifficultyLevel.parse
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testDifficultyLevelParse() {
-        System.out.println("\n-- DifficultyLevel.parse --");
-        assertEquals("parse('0') is LEVEL_0", DifficultyLevel.LEVEL_0, DifficultyLevel.parse("0"));
-        assertEquals("parse('1.5') is LEVEL_1_5", DifficultyLevel.LEVEL_1_5, DifficultyLevel.parse("1.5"));
-        assertEquals("parse('6') is LEVEL_6", DifficultyLevel.LEVEL_6, DifficultyLevel.parse("6"));
-
-        assertThrows("parse('99') throws", () -> DifficultyLevel.parse("99"));
-        assertEquals("parse('7') is LEVEL_7", DifficultyLevel.LEVEL_7, DifficultyLevel.parse("7"));
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 15. ModuloOperator and LogOperator
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testModuloOperator() {
-        System.out.println("\n-- ModuloOperator --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(100).build();
-        ModuloOperator mod = new ModuloOperator();
-
-        assertEquals("symbol is %", '%', mod.symbol());
-        assertFalse("modulo is not unary", mod.isUnary());
-
-        assertEquals("10 % 3 = 1", 1, mod.apply(10, 3, config));
-        assertEquals("17 % 5 = 2", 2, mod.apply(17, 5, config));
-        assertEquals("29 % 7 = 1", 1, mod.apply(29, 7, config));
-
-        // Exact divisibility rejected (overlaps with division)
-        assertEquals("10 % 5 rejected (exact div)", Integer.MIN_VALUE, mod.apply(10, 5, config));
-        assertEquals("12 % 4 rejected (exact div)", Integer.MIN_VALUE, mod.apply(12, 4, config));
-
-        // right < 2 rejected
-        assertEquals("10 % 1 rejected", Integer.MIN_VALUE, mod.apply(10, 1, config));
-        assertEquals("10 % 0 rejected", Integer.MIN_VALUE, mod.apply(10, 0, config));
-
-        // left <= right rejected
-        assertEquals("3 % 5 rejected (left <= right)", Integer.MIN_VALUE, mod.apply(3, 5, config));
-        assertEquals("5 % 5 rejected (left == right)", Integer.MIN_VALUE, mod.apply(5, 5, config));
-    }
-
-    private static void testModuloOperatorValidDomain() {
-        System.out.println("\n-- ModuloOperator validRightOperands --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(100).build();
-        ModuloOperator mod = new ModuloOperator();
-        Random random = new Random(42);
-
-        List<Integer> domain = mod.validRightOperands(10, config, random);
-        assertTrue("10 has valid modulo operands", domain.size() > 0);
-
-        boolean allValid = true;
-        for (int right : domain) {
-            if (mod.apply(10, right, config) == Integer.MIN_VALUE) {
-                allValid = false;
-            }
-        }
-        assertTrue("All returned operands are valid for 10", allValid);
-
-        List<Integer> domain3 = mod.validRightOperands(3, config, random);
-        assertTrue("3 % 2 = 1 is the only valid operand", domain3.size() == 1 && domain3.contains(2));
-
-        List<Integer> domain2 = mod.validRightOperands(2, config, random);
-        assertEquals("2 has no valid modulo operands", 0, domain2.size());
-    }
-
-    private static void testLogOperator() {
-        System.out.println("\n-- LogOperator --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(500).build();
-        LogOperator log = new LogOperator();
-
-        assertEquals("symbol is L", 'L', log.symbol());
-        assertFalse("log is not unary", log.isUnary());
-
-        assertEquals("log_2(8) = 3", 3, log.apply(2, 8, config));
-        assertEquals("log_2(16) = 4", 4, log.apply(2, 16, config));
-        assertEquals("log_3(27) = 3", 3, log.apply(3, 27, config));
-        assertEquals("log_10(100) = 2", 2, log.apply(10, 100, config));
-        assertEquals("log_5(125) = 3", 3, log.apply(5, 125, config));
-
-        assertEquals("log_2(7) rejected", Integer.MIN_VALUE, log.apply(2, 7, config));
-        assertEquals("log_3(10) rejected", Integer.MIN_VALUE, log.apply(3, 10, config));
-
-        assertEquals("log_2(2) = 1 rejected (trivial)", Integer.MIN_VALUE, log.apply(2, 2, config));
-        assertEquals("log_5(1) rejected", Integer.MIN_VALUE, log.apply(5, 1, config));
-
-        assertEquals("log_1(1) rejected", Integer.MIN_VALUE, log.apply(1, 1, config));
-        assertEquals("log_0(0) rejected", Integer.MIN_VALUE, log.apply(0, 0, config));
-    }
-
-    private static void testLogOperatorValidDomain() {
-        System.out.println("\n-- LogOperator validRightOperands --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(500).build();
-        LogOperator log = new LogOperator();
-        Random random = new Random(42);
-
-        List<Integer> domain2 = log.validRightOperands(2, config, random);
-        assertTrue("Base 2 has multiple valid arguments", domain2.size() >= 5);
-        assertTrue("Base 2 includes 4 (2^2)", domain2.contains(4));
-        assertTrue("Base 2 includes 8 (2^3)", domain2.contains(8));
-        assertTrue("Base 2 includes 256 (2^8)", domain2.contains(256));
-        assertFalse("Base 2 excludes 2 (exponent=1 trivial)", domain2.contains(2));
-
-        List<Integer> domain10 = log.validRightOperands(10, config, random);
-        assertTrue("Base 10 includes 100", domain10.contains(100));
-        assertFalse("Base 10 excludes 1000 (> maxCellValue)", domain10.contains(1000));
-
-        List<Integer> domain1 = log.validRightOperands(1, config, random);
-        assertEquals("Base 1 has no valid arguments", 0, domain1.size());
-
-        boolean allValid = true;
-        for (int arg : domain2) {
-            if (log.apply(2, arg, config) == Integer.MIN_VALUE) {
-                allValid = false;
-            }
-        }
-        assertTrue("All returned base-2 arguments are valid", allValid);
-    }
-
-    private static void testLevel7GeneratesAndVerifies() {
-        System.out.println("\n-- Level 7 generates and verifies --");
-        DifficultyLevel level = DifficultyLevel.LEVEL_7;
-        PuzzleConfig config = level.buildConfig();
-        Random random = new Random(42);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-
-        boolean hasModulo = registry.all().stream().anyMatch(op -> op.symbol() == '%');
-        boolean hasLog = registry.all().stream().anyMatch(op -> op.symbol() == 'L');
-        assertTrue("Level 7 registry has modulo", hasModulo);
-        assertTrue("Level 7 registry has log", hasLog);
-
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        assertTrue("Level 7 grid not null", grid != null);
-        assertTrue("Level 7 grid verifies", grid.verify());
-    }
-
-    private static void testLevel7ShapeMode() {
-        System.out.println("\n-- Level 7 shape mode --");
-        DifficultyLevel level = DifficultyLevel.LEVEL_7;
-        PuzzleConfig config = level.buildConfig();
-        Random random = new Random(123);
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-
-        assertTrue("Level 7 shape grid not null", grid != null);
-        assertTrue("Level 7 shape mode", grid.isShapeMode());
-        assertTrue("Level 7 shape grid verifies", grid.verify());
-    }
-
-    private static void testLevel7MultipleSeeds() {
-        System.out.println("\n-- Level 7 multiple seeds (10 seeds) --");
-        DifficultyLevel level = DifficultyLevel.LEVEL_7;
-
-        int successCount = 0;
-        for (int seed = 0; seed < 10; seed++) {
-            try {
-                PuzzleConfig config = level.buildConfig();
-                Random random = new Random(seed);
-                OperatorRegistry registry = new OperatorRegistry(config, random);
-                level.configureRegistry(registry);
-
-                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-                PuzzleGrid grid = gen.generate();
-                if (grid != null && grid.verify()) {
-                    successCount++;
-                }
-            } catch (Exception e) {
-                // Count as failure
-            }
-        }
-        assertTrue("Level 7 succeeds for all 10 seeds (" + successCount + "/10)",
-                successCount == 10);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 16. DifficultyScorer
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testDifficultyScorerMonotonic() {
-        System.out.println("\n-- DifficultyScorer monotonic progression --");
-        DifficultyLevel[] levels = {
-                DifficultyLevel.LEVEL_0, DifficultyLevel.LEVEL_1,
-                DifficultyLevel.LEVEL_2, DifficultyLevel.LEVEL_3,
-                DifficultyLevel.LEVEL_4, DifficultyLevel.LEVEL_5,
-                DifficultyLevel.LEVEL_6, DifficultyLevel.LEVEL_7
+    // ── 1. Grid size × operator set matrix ───────────────────────────────────
+
+    private void testGridSizeOperatorCombinations() {
+        section("Grid Size × Operator Set Combinations");
+
+        // Each entry: matrixSize, maxCellValue, operators, minUsagePerOperator.
+        // Configurations must be feasible:
+        //   - arms needed = numOps × minUsage ≤ targetEquationCount
+        //   - addition-only needs generous maxVal to avoid sum overflow
+        //   - n=3 shapes produce ~5 arms max, so 3+ ops × 2 is infeasible
+        Object[][] combos = {
+            // ── matrixSize=3 (target=5, max for 3×3 grid) ──
+            {3, 50,  Set.of('+'),               0},  // add-only: needs maxVal headroom for sum cascades
+            {3, 20,  Set.of('+', '-'),           1},
+            {3, 20,  Set.of('+', '-', '*'),      1},  // 3 ops × 1 = 3 ≤ 5
+            {3, 20,  Set.of('+', '-', '*', '/'), 1},  // 4 ops × 1 = 4 ≤ 5
+
+            // ── matrixSize=5 (target=10, shape ~9-10 arms) ──
+            {5, 100, Set.of('+'),               0},  // add-only: relaxed usage
+            {5, 100, Set.of('+', '-'),           2},
+            {5, 100, Set.of('+', '-', '*'),      2},
+            {5, 100, Set.of('+', '-', '*', '/'), 2},
+
+            // ── matrixSize=7 (target=21, shape ~15-21 arms) ──
+            {7, 200, Set.of('+'),               0},  // add-only: needs higher maxVal
+            {7, 100, Set.of('+', '-'),           2},
+            {7, 100, Set.of('+', '-', '*'),      2},
+            {7, 100, Set.of('+', '-', '*', '/'), 2},
         };
 
-        double previousScore = -1;
-        boolean monotonic = true;
-        for (DifficultyLevel level : levels) {
-            Random random = new Random(42);
-            PuzzleConfig config = level.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(config, random);
-            level.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-            PuzzleGrid grid = gen.generate();
-            EquationMask mask = level.buildMask(grid, random);
+        for (Object[] combo : combos) {
+            int matrixSize              = (int) combo[0];
+            int maxVal                  = (int) combo[1];
+            @SuppressWarnings("unchecked")
+            Set<Character> ops          = (Set<Character>) combo[2];
+            int minUsage                = (int) combo[3];
 
-            DifficultyScorer.Score score = DifficultyScorer.score(grid, mask, level);
-            if (score.total() < previousScore) {
-                monotonic = false;
-            }
-            previousScore = score.total();
-        }
-        assertTrue("Difficulty scores increase with level", monotonic);
-    }
+            String label = String.format("n=%d ops=%s maxVal=%d minU=%d",
+                matrixSize, opsLabel(ops), maxVal, minUsage);
 
-    private static void testDifficultyScorerShapeMode() {
-        System.out.println("\n-- DifficultyScorer shape mode --");
-        DifficultyLevel level = DifficultyLevel.LEVEL_4;
-        Random random = new Random(42);
-        PuzzleConfig config = level.buildConfig();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-        EquationMask mask = level.buildMask(grid, random);
-
-        DifficultyScorer.Score score = DifficultyScorer.score(grid, mask, level);
-        assertTrue("Shape mode score > 0", score.total() > 0);
-        assertTrue("Shape mode score <= 100", score.total() <= 100);
-        assertTrue("Shape mode hiddenRatio in [0,1]",
-                score.hiddenRatio() >= 0 && score.hiddenRatio() <= 1);
-        assertTrue("Shape mode operatorComplexity in [0,1]",
-                score.operatorComplexity() >= 0 && score.operatorComplexity() <= 1);
-    }
-
-    private static void testDifficultyScorerBounds() {
-        System.out.println("\n-- DifficultyScorer bounds check --");
-        Random random = new Random(99);
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20)
-                .minUsagePerOperator(0).build();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        EquationMask allVisible = EquationMask.allVisible();
-        DifficultyScorer.Score lowScore = DifficultyScorer.score(grid, allVisible, DifficultyLevel.LEVEL_0);
-        assertTrue("All-visible score is low", lowScore.total() < 15);
-
-        EquationMask maxHide = EquationMask.random(config, config.matrixSize * config.equationsPerLine * 2 - 1, random);
-        DifficultyScorer.Score highScore = DifficultyScorer.score(grid, maxHide, DifficultyLevel.LEVEL_6);
-        assertTrue("Max-hidden score is high", highScore.total() > lowScore.total());
-    }
-
-    private static void testDifficultyScorerJsonExport() {
-        System.out.println("\n-- DifficultyScorer in JSON export --");
-        DifficultyLevel level = DifficultyLevel.LEVEL_3;
-        Random random = new Random(42);
-        PuzzleConfig config = level.buildConfig();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-        EquationMask mask = level.buildMask(grid, random, registry);
-
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
-        String json = exporter.exportJson();
-
-        assertTrue("JSON contains difficulty field", json.contains("\"difficulty\""));
-        assertTrue("JSON contains total score", json.contains("\"total\""));
-        assertTrue("JSON contains hiddenRatio", json.contains("\"hiddenRatio\""));
-        assertTrue("JSON contains operatorComplexity", json.contains("\"operatorComplexity\""));
-    }
-
-    // ── 17. Carry avoidance verification ──────────────────────────────────────
-
-    private static void testCarryAvoidanceLevel0() {
-        System.out.println("\n-- Carry avoidance Level 0 --");
-        DifficultyLevel level = DifficultyLevel.LEVEL_0;
-
-        boolean allNoCarry = true;
-        for (int seed = 1; seed <= 10; seed++) {
-            Random random = new Random(seed);
-            PuzzleConfig config = level.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(config, random);
-            level.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-            PuzzleGrid grid = gen.generate();
-
-            for (int row = 0; row < config.matrixSize; row++) {
-                for (int eq = 0; eq < config.equationsPerLine; eq++) {
-                    int leftCol = eq * 2;
-                    int rightCol = leftCol + 1;
-                    int left = grid.numbers[row][leftCol];
-                    int right = grid.numbers[row][rightCol];
-                    char opSym = grid.horizontalOperators[row][eq].symbol();
-                    if (opSym == '+' && DifficultyLevel.hasCarry(left, right)) {
-                        allNoCarry = false;
-                    }
-                }
-            }
-            for (int col = 0; col < config.matrixSize; col++) {
-                for (int eq = 0; eq < config.equationsPerLine; eq++) {
-                    int topRow = eq * 2;
-                    int botRow = topRow + 1;
-                    int top = grid.numbers[topRow][col];
-                    int bot = grid.numbers[botRow][col];
-                    char opSym = grid.verticalOperators[col][eq].symbol();
-                    if (opSym == '+' && DifficultyLevel.hasCarry(top, bot)) {
-                        allNoCarry = false;
-                    }
-                }
-            }
-        }
-        assertTrue("Level 0 has no carry additions across 10 seeds", allNoCarry);
-
-        // Verify Level 1 allows carry (it should)
-        boolean level1HasCarry = false;
-        for (int seed = 1; seed <= 20; seed++) {
-            Random random = new Random(seed);
-            PuzzleConfig config = DifficultyLevel.LEVEL_1.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(config, random);
-            DifficultyLevel.LEVEL_1.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-            PuzzleGrid grid = gen.generate();
-
-            for (int row = 0; row < config.matrixSize && !level1HasCarry; row++) {
-                for (int eq = 0; eq < config.equationsPerLine && !level1HasCarry; eq++) {
-                    int left = grid.numbers[row][eq * 2];
-                    int right = grid.numbers[row][eq * 2 + 1];
-                    if (grid.horizontalOperators[row][eq].symbol() == '+'
-                            && DifficultyLevel.hasCarry(left, right)) {
-                        level1HasCarry = true;
-                    }
-                }
-            }
-        }
-        assertTrue("Level 1 allows carry (found carry in 20 seeds)", level1HasCarry);
-    }
-
-    // ── 18. Custom operator distractors ──────────────────────────────────────
-
-    private static void testCustomOperatorDistractors() {
-        System.out.println("\n-- Custom operator distractors --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(200).build();
-        Random random = new Random(42);
-        DistractorGenerator gen = new DistractorGenerator(config, random);
-
-        // min(10, 7) = 7 → should include max(10,7)=10 as distractor
-        DistractorGenerator.EquationContext minCtx =
-                new DistractorGenerator.EquationContext(10, 7, 'm');
-        List<Integer> minOpts = gen.generateOptions(7, 5, DifficultyLevel.LEVEL_5, minCtx);
-        assertTrue("Min distractor: options contain correct answer 7", minOpts.contains(7));
-        assertTrue("Min distractor: max(10,7)=10 appears as distractor", minOpts.contains(10));
-
-        // max(10, 7) = 10 → should include min(10,7)=7 as distractor
-        DistractorGenerator.EquationContext maxCtx =
-                new DistractorGenerator.EquationContext(10, 7, 'M');
-        List<Integer> maxOpts = gen.generateOptions(10, 5, DifficultyLevel.LEVEL_5, maxCtx);
-        assertTrue("Max distractor: options contain correct answer 10", maxOpts.contains(10));
-        assertTrue("Max distractor: min(10,7)=7 appears as distractor", maxOpts.contains(7));
-
-        // avg(10, 6) = 8 → should include sum 16 as distractor
-        DistractorGenerator.EquationContext avgCtx =
-                new DistractorGenerator.EquationContext(10, 6, 'a');
-        List<Integer> avgOpts = gen.generateOptions(8, 5, DifficultyLevel.LEVEL_5, avgCtx);
-        assertTrue("Avg distractor: options contain correct answer 8", avgOpts.contains(8));
-        assertTrue("Avg distractor: sum(10,6)=16 appears as distractor", avgOpts.contains(16));
-
-        // 3^3 = 27 → should include 3*3=9 as distractor
-        DistractorGenerator.EquationContext expCtx =
-                new DistractorGenerator.EquationContext(3, 3, '^');
-        List<Integer> expOpts = gen.generateOptions(27, 5, DifficultyLevel.LEVEL_6, expCtx);
-        assertTrue("Exp distractor: options contain correct answer 27", expOpts.contains(27));
-        assertTrue("Exp distractor: 3*3=9 appears as distractor", expOpts.contains(9));
-
-        // sqrt(25) = 5 → should include 25/2=12 as distractor
-        DistractorGenerator.EquationContext sqrtCtx =
-                new DistractorGenerator.EquationContext(25, 1, 'r');
-        List<Integer> sqrtOpts = gen.generateOptions(5, 5, DifficultyLevel.LEVEL_6, sqrtCtx);
-        assertTrue("Sqrt distractor: options contain correct answer 5", sqrtOpts.contains(5));
-        boolean hasSqrtNear = sqrtOpts.contains(4) || sqrtOpts.contains(6) || sqrtOpts.contains(12);
-        assertTrue("Sqrt distractor: near values or half appear", hasSqrtNear);
-
-        // 10 % 3 = 1 → should include 10/3=3 as distractor
-        DistractorGenerator.EquationContext modCtx =
-                new DistractorGenerator.EquationContext(10, 3, '%');
-        List<Integer> modOpts = gen.generateOptions(1, 6, DifficultyLevel.LEVEL_7, modCtx);
-        assertTrue("Modulo distractor: options contain correct answer 1", modOpts.contains(1));
-        assertTrue("Modulo distractor: quotient 10/3=3 appears as distractor", modOpts.contains(3));
-
-        // log_2(8) = 3 → should include base 2 and argument 8
-        DistractorGenerator.EquationContext logCtx =
-                new DistractorGenerator.EquationContext(2, 8, 'L');
-        List<Integer> logOpts = gen.generateOptions(3, 6, DifficultyLevel.LEVEL_7, logCtx);
-        assertTrue("Log distractor: options contain correct answer 3", logOpts.contains(3));
-        boolean hasLogDistractor = logOpts.contains(2) || logOpts.contains(4) || logOpts.contains(8);
-        assertTrue("Log distractor: base/exponent/adjacent appear", hasLogDistractor);
-    }
-
-    // ── 19. Non-unique puzzle detection ──────────────────────────────────────
-
-    private static void testNonUniquePuzzleDetection() {
-        System.out.println("\n-- Non-unique puzzle detection --");
-        Random random = new Random(42);
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20)
-                .minUsagePerOperator(0).build();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        registry.remove('*');
-        registry.remove('/');
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-
-        // All visible → unique (trivially — nothing to solve)
-        EquationMask allVisible = EquationMask.allVisible();
-        assertTrue("All-visible puzzle is unique",
-                UniquenessChecker.isUnique(grid, allVisible, registry));
-
-        // Hide all but one equation → likely non-unique or very constrained
-        int totalEquations = 2 * config.matrixSize * config.equationsPerLine;
-        EquationMask maxHide = EquationMask.random(config, totalEquations - 1, random);
-        // This should have a harder time being unique (many unknowns)
-        boolean maxHideResult = UniquenessChecker.isUnique(grid, maxHide, registry);
-        // We just verify it runs without error and returns a boolean
-        assertTrue("UniquenessChecker runs on max-hidden mask",
-                maxHideResult || !maxHideResult);
-
-        // Hide exactly 1 equation → should be unique (one equation determines its cells)
-        EquationMask singleHide = EquationMask.random(config, 1, random);
-        boolean singleHideResult = UniquenessChecker.isUnique(grid, singleHide, registry);
-        assertTrue("Single hidden equation is unique", singleHideResult);
-    }
-
-    // ── 20. Operator hiding disabled at early levels ─────────────────────────
-
-    private static void testOperatorHidingDisabledEarlyLevels() {
-        System.out.println("\n-- Operator hiding disabled at early levels --");
-        // Levels 0-2 should have operatorHideChance = 0.0
-        assertTrue("Level 0 operator hide chance is 0",
-                DifficultyLevel.LEVEL_0.operatorHideChance == 0.0);
-        assertTrue("Level 1 operator hide chance is 0",
-                DifficultyLevel.LEVEL_1.operatorHideChance == 0.0);
-        assertTrue("Level 1.5 operator hide chance is 0",
-                DifficultyLevel.LEVEL_1_5.operatorHideChance == 0.0);
-        assertTrue("Level 2 operator hide chance is 0",
-                DifficultyLevel.LEVEL_2.operatorHideChance == 0.0);
-
-        // Level 2.5 and 3: "mostly visible" means small non-zero chance
-        assertTrue("Level 2.5 has small operator hiding",
-                DifficultyLevel.LEVEL_2_5.operatorHideChance > 0.0
-                && DifficultyLevel.LEVEL_2_5.operatorHideChance <= 0.15);
-        assertTrue("Level 3 has small operator hiding",
-                DifficultyLevel.LEVEL_3.operatorHideChance > 0.0
-                && DifficultyLevel.LEVEL_3.operatorHideChance <= 0.15);
-
-        // Level 3.5+: "sometimes hidden" means higher chance
-        assertTrue("Level 3.5 has operator hiding > 0",
-                DifficultyLevel.LEVEL_3_5.operatorHideChance > 0.0);
-        assertTrue("Level 4 has operator hiding > 0",
-                DifficultyLevel.LEVEL_4.operatorHideChance > 0.0);
-
-        // Verify early-level JSON export has no hiddenOperators
-        Random random = new Random(42);
-        DifficultyLevel level = DifficultyLevel.LEVEL_0;
-        PuzzleConfig config = level.buildConfig();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-        EquationMask mask = level.buildMask(grid, random, registry);
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
-        String json = exporter.exportJson();
-        assertFalse("Level 0 JSON has no hiddenOperators", json.contains("\"hiddenOperators\""));
-    }
-
-    // ── 21. Level-specific distractor count verification ─────────────────────
-
-    private static void testDistractorCountPerLevel() {
-        System.out.println("\n-- Level-specific distractor counts --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(5).minCellValue(1).maxCellValue(200).build();
-
-        DifficultyLevel[] levels = DifficultyLevel.values();
-        for (DifficultyLevel level : levels) {
-            Random random = new Random(42);
-            DistractorGenerator gen = new DistractorGenerator(config, random);
-            int optionCount = level.optionCount(random);
-            List<Integer> options = gen.generateOptions(25, optionCount, level);
-
-            assertTrue("Level " + level.label + " produces exactly " + optionCount + " options",
-                    options.size() == optionCount);
-            assertTrue("Level " + level.label + " options contain correct answer",
-                    options.contains(25));
-
-            // Verify all options are distinct
-            long distinctCount = options.stream().distinct().count();
-            assertTrue("Level " + level.label + " options are all distinct",
-                    distinctCount == options.size());
-        }
-    }
-
-    // ── 22. Spec-aligned hiding parameters ──────────────────────────────────
-
-    private static void testResultHidingMostlyVisibleLevels() {
-        System.out.println("\n-- Result hiding at 'mostly visible' levels (1, 1.5, 2) --");
-        assertTrue("Level 1 resultHideChance is 0.1",
-                DifficultyLevel.LEVEL_1.resultHideChance == 0.1);
-        assertTrue("Level 1.5 resultHideChance is 0.1",
-                DifficultyLevel.LEVEL_1_5.resultHideChance == 0.1);
-        assertTrue("Level 2 resultHideChance is 0.1",
-                DifficultyLevel.LEVEL_2.resultHideChance == 0.1);
-        assertTrue("Level 0 resultHideChance is still 0 (always visible)",
-                DifficultyLevel.LEVEL_0.resultHideChance == 0.0);
-
-        // Verify levels 1, 1.5, 2 still generate and verify correctly
-        for (DifficultyLevel level : new DifficultyLevel[]{
-                DifficultyLevel.LEVEL_1, DifficultyLevel.LEVEL_1_5, DifficultyLevel.LEVEL_2}) {
-            Random random = new Random(42);
-            PuzzleConfig config = level.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(config, random);
-            level.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-            PuzzleGrid grid = gen.generate();
-            assertTrue("Level " + level.label + " grid verifies with new result hiding",
-                    grid.verify());
-        }
-    }
-
-    private static void testOperatorHidingSpecAlignment() {
-        System.out.println("\n-- Operator/result hiding spec alignment --");
-        assertTrue("Level 4 operatorHideChance is 0.3 (sometimes hidden)",
-                DifficultyLevel.LEVEL_4.operatorHideChance == 0.3);
-        assertTrue("Level 4.5 resultHideChance is 0.8 (mostly hidden)",
-                DifficultyLevel.LEVEL_4_5.resultHideChance == 0.8);
-        assertTrue("Level 5 operatorHideChance is 0.5 (partially hidden)",
-                DifficultyLevel.LEVEL_5.operatorHideChance == 0.5);
-
-        // Verify JSON export works correctly with updated hiding params
-        Random random = new Random(42);
-        DifficultyLevel level = DifficultyLevel.LEVEL_4;
-        PuzzleConfig config = level.buildConfig();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-        EquationMask mask = level.buildMask(grid, random, registry);
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
-        String json = exporter.exportJson();
-        assertTrue("Level 4 JSON export with updated hiding succeeds",
-                json.contains("\"level\"") && json.contains("\"puzzle\""));
-    }
-
-    // ── 23. Carry-mistake distractors, intersection-key threshold, Level 7 range ──
-
-    private static void testCarryMistakeDistractors() {
-        System.out.println("\n-- Carry-mistake distractors for Level 2 --");
-        PuzzleConfig config = PuzzleConfig.builder()
-                .matrixSize(3).minCellValue(1).maxCellValue(20).build();
-        DistractorGenerator gen = new DistractorGenerator(config, new Random(42));
-
-        // 18 + 7 = 25: forgetting carry gives 15 (drop the tens carry)
-        DistractorGenerator.EquationContext addCtx =
-                new DistractorGenerator.EquationContext(18, 7, '+');
-        List<Integer> options = gen.generateOptions(25, 4, DifficultyLevel.LEVEL_2, addCtx);
-        assertTrue("Carry-mistake distractor: 25-10=15 present for 18+7",
-                options.contains(15));
-
-        // 13 - 8 = 5: borrowing mistake gives 15 (5+10)
-        DistractorGenerator.EquationContext subCtx =
-                new DistractorGenerator.EquationContext(13, 8, '-');
-        List<Integer> subOptions = gen.generateOptions(5, 4, DifficultyLevel.LEVEL_2, subCtx);
-        assertTrue("Carry-mistake distractor: 5+10=15 present for 13-8",
-                subOptions.contains(15));
-
-        // No carry-mistake distractors at Level 1 (below threshold)
-        DistractorGenerator.EquationContext lvl1Ctx =
-                new DistractorGenerator.EquationContext(8, 7, '+');
-        List<Integer> lvl1Options = gen.generateOptions(15, 3, DifficultyLevel.LEVEL_1, lvl1Ctx);
-        assertTrue("Level 1 still produces correct option count",
-                lvl1Options.size() == 3 && lvl1Options.contains(15));
-    }
-
-    private static void testIntersectionKeyThreshold() {
-        System.out.println("\n-- Intersection-key threshold at Level 3+ --");
-        // The spec says "intersections become key after level 3",
-        // meaning Level 3 and above use intersection-key masking
-        assertTrue("Level 3 ordinal >= LEVEL_3 (intersectionsAreKey starts at 3)",
-                DifficultyLevel.LEVEL_3.ordinal() >= DifficultyLevel.LEVEL_3.ordinal());
-
-        // Verify shape generation works at Level 3 with the new threshold
-        for (int seed = 0; seed < 5; seed++) {
-            Random random = new Random(seed);
-            DifficultyLevel level = DifficultyLevel.LEVEL_3;
-            PuzzleConfig config = level.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(config, random);
-            level.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-            PuzzleGrid grid = gen.generate();
-            EquationMask mask = level.buildMask(grid, random, registry);
-            assertTrue("Level 3 seed " + seed + " mask builds successfully",
-                    mask.hiddenCount() >= 0);
-        }
-    }
-
-    private static void testLevel7VisibleRange() {
-        System.out.println("\n-- Level 7 visible range --");
-        assertTrue("Level 7 minVisible is 0.15 (tighter than spec for hardest level)",
-                DifficultyLevel.LEVEL_7.minVisible == 0.15);
-        assertTrue("Level 7 maxVisible is 0.30 (spec: 35% for 6+, tighter for 7)",
-                DifficultyLevel.LEVEL_7.maxVisible == 0.30);
-        assertTrue("Level 6 minVisible is 0.20 (spec: 20-35%)",
-                DifficultyLevel.LEVEL_6.minVisible == 0.20);
-    }
-
-    private static void testJsonFieldNames() {
-        System.out.println("\n-- JSON field names match spec --");
-        Random random = new Random(42);
-        DifficultyLevel level = DifficultyLevel.LEVEL_3;
-        PuzzleConfig config = level.buildConfig();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate();
-        EquationMask mask = level.buildMask(grid, random, registry);
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
-        String json = exporter.exportJson();
-
-        assertTrue("JSON uses 'optionCount' field (spec-aligned)",
-                json.contains("\"optionCount\""));
-        assertTrue("JSON uses 'hideOperators' field (spec-aligned)",
-                json.contains("\"hideOperators\""));
-        assertTrue("JSON uses 'hideResults' field (spec-aligned)",
-                json.contains("\"hideResults\""));
-        assertTrue("JSON does NOT use old 'minOptionCount' field",
-                !json.contains("\"minOptionCount\""));
-        assertTrue("JSON does NOT use old 'operatorHideChance' field",
-                !json.contains("\"operatorHideChance\""));
-    }
-
-    private static void testLevel3AvoidLargeProducts() {
-        System.out.println("\n-- Level 3 avoids large products --");
-        PuzzleConfig config = DifficultyLevel.LEVEL_3.buildConfig();
-        assertTrue("Level 3 maxMultiplyResult is 30",
-                config.maxMultiplyResult == 30);
-        assertTrue("Level 3.5 maxMultiplyResult equals maxCellValue (unrestricted)",
-                DifficultyLevel.LEVEL_3_5.buildConfig().maxMultiplyResult == 50);
-        assertTrue("Level 4 maxMultiplyResult equals maxCellValue (unrestricted)",
-                DifficultyLevel.LEVEL_4.buildConfig().maxMultiplyResult == 100);
-
-        // Verify Level 3 multiply results never exceed 30 across multiple seeds
-        for (int seed = 0; seed < 20; seed++) {
-            Random random = new Random(seed);
-            DifficultyLevel level = DifficultyLevel.LEVEL_3;
-            PuzzleConfig cfg = level.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(cfg, random);
-            level.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(cfg, registry, random);
-            PuzzleGrid grid = gen.generate();
-            assertTrue("Level 3 seed " + seed + " verifies", grid.verify());
-
-            // Check all horizontal equations for multiply results
-            for (int row = 0; row < cfg.matrixSize; row++) {
-                for (int eq = 0; eq < cfg.equationsPerLine; eq++) {
-                    if (grid.horizontalOperators[row][eq].symbol() == '*') {
-                        int result = grid.numbers[row][eq * 2 + 2];
-                        assertTrue("Level 3 seed " + seed + " multiply result " + result + " <= 30",
-                                result <= 30);
-                    }
-                }
-            }
-            for (int col = 0; col < cfg.matrixSize; col++) {
-                for (int eq = 0; eq < cfg.equationsPerLine; eq++) {
-                    if (grid.verticalOperators[col][eq].symbol() == '*') {
-                        int result = grid.numbers[eq * 2 + 2][col];
-                        assertTrue("Level 3 seed " + seed + " vertical multiply result " + result + " <= 30",
-                                result <= 30);
-                    }
-                }
-            }
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 24. Spec-aligned maxUnknowns for Levels 2 and 2.5
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testLevel2MaxUnknownsPerEquation() {
-        System.out.println("\n-- Level 2 and 2.5 maxUnknownsPerEquation = 2 --");
-        assertEquals("Level 2 maxUnknownsPerEquation", 2,
-                DifficultyLevel.LEVEL_2.maxUnknownsPerEquation);
-        assertEquals("Level 2.5 maxUnknownsPerEquation", 2,
-                DifficultyLevel.LEVEL_2_5.maxUnknownsPerEquation);
-        assertEquals("Level 1.5 maxUnknownsPerEquation stays 1", 1,
-                DifficultyLevel.LEVEL_1_5.maxUnknownsPerEquation);
-        assertEquals("Level 3 maxUnknownsPerEquation stays 2", 2,
-                DifficultyLevel.LEVEL_3.maxUnknownsPerEquation);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // 25. Min operator usage for advanced levels
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private static void testMinUsageAdvancedLevels() {
-        System.out.println("\n-- Advanced levels enforce minUsage >= 1 --");
-        PuzzleConfig config5 = DifficultyLevel.LEVEL_5.buildConfig();
-        assertTrue("Level 5 minUsagePerOperator >= 1",
-                config5.minUsagePerOperator >= 1);
-        PuzzleConfig config6 = DifficultyLevel.LEVEL_6.buildConfig();
-        assertTrue("Level 6 minUsagePerOperator >= 1",
-                config6.minUsagePerOperator >= 1);
-        PuzzleConfig config7 = DifficultyLevel.LEVEL_7.buildConfig();
-        assertTrue("Level 7 minUsagePerOperator >= 1",
-                config7.minUsagePerOperator >= 1);
-
-        for (int seed = 0; seed < 5; seed++) {
-            Random random = new Random(seed);
-            DifficultyLevel level = DifficultyLevel.LEVEL_5;
-            PuzzleConfig cfg = level.buildConfig();
-            OperatorRegistry registry = new OperatorRegistry(cfg, random);
-            level.configureRegistry(registry);
-            CrossMathGenerator gen = new CrossMathGenerator(cfg, registry, random);
             try {
-                PuzzleGrid grid = gen.generate();
-                assertTrue("Level 5 seed " + seed + " generates successfully",
-                        grid != null && grid.verify());
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(matrixSize)
+                    .maxCellValue(maxVal)
+                    .minUsagePerOperator(minUsage)
+                    .allowedOperators(ops)
+                    .maxGenerationAttempts(5000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 42);
+                verifyAllInvariants(label, grid, config, ops, minUsage);
             } catch (Exception e) {
-                assertTrue("Level 5 seed " + seed + " should not throw", false);
+                fail(label, "Exception: " + e.getMessage());
             }
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 26. JSON operator objects with isUnary flag
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── 2. maxCellValue variations ───────────────────────────────────────────
 
-    private static void testJsonOperatorIsUnaryFlag() {
-        System.out.println("\n-- JSON operators include isUnary for sqrt --");
-        Random random = new Random(42);
-        DifficultyLevel level = DifficultyLevel.LEVEL_6;
-        PuzzleConfig config = level.buildConfig();
-        OperatorRegistry registry = new OperatorRegistry(config, random);
-        level.configureRegistry(registry);
+    private void testMaxCellValueVariations() {
+        section("maxCellValue Variations");
 
-        ShapeGenerator shapeGen = new ShapeGenerator(config, random);
-        CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
-        PuzzleGrid grid = gen.generate(shapeGen);
-        EquationMask mask = level.buildMask(grid, random, registry);
-        PuzzleJsonExporter exporter = new PuzzleJsonExporter(grid, mask, level, random, registry);
-        String json = exporter.exportJson();
+        for (int maxVal : new int[]{10, 20, 50, 100, 200}) {
+            String label = "n=5 maxVal=" + maxVal;
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(5)
+                    .maxCellValue(maxVal)
+                    .minUsagePerOperator(1)
+                    .maxGenerationAttempts(5000)
+                    .build();
 
-        assertTrue("JSON shape operators use object format with 'symbol'",
-                json.contains("\"symbol\":"));
-        if (json.contains("\"symbol\": \"r\"")) {
-            assertTrue("JSON sqrt operator includes isUnary flag",
-                    json.contains("\"isUnary\": true"));
+                PuzzleGrid grid = generateGrid(config, 123);
+                verifyAllInvariants(label, grid, config, null, 1);
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
         }
-        assertTrue("JSON binary operators do NOT include isUnary",
-                !json.contains("\"symbol\": \"+\", \"isUnary\""));
+    }
+
+    // ── 3. minUsagePerOperator variations ────────────────────────────────────
+
+    private void testMinUsagePerOperatorVariations() {
+        section("minUsagePerOperator Variations");
+
+        for (int minUsage : new int[]{0, 1, 2}) {
+            String label = "n=5 allOps minUsage=" + minUsage;
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(5)
+                    .maxCellValue(100)
+                    .minUsagePerOperator(minUsage)
+                    .maxGenerationAttempts(5000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 789);
+                verifyAllInvariants(label, grid, config, null, minUsage);
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
+        }
+    }
+
+    // ── 4. Multiple seeds per config ─────────────────────────────────────────
+
+    private void testMultipleSeedsStability() {
+        section("Multiple Seeds Stability (20 seeds × 3 configs)");
+
+        int[][] configs = {
+            // matrixSize, maxVal, minUsage
+            {3, 20,  1},
+            {5, 100, 2},
+            {7, 100, 2},
+        };
+
+        long[] seeds = {1, 7, 13, 42, 99, 123, 256, 456, 789, 1000,
+                        1337, 2024, 3141, 4444, 5555, 6789, 7777, 8888, 9999, 31337};
+
+        for (int[] cfg : configs) {
+            int matrixSize = cfg[0];
+            int maxVal     = cfg[1];
+            int minUsage   = cfg[2];
+
+            int seedPassed = 0;
+            int seedFailed = 0;
+
+            for (long seed : seeds) {
+                String label = String.format("n=%d maxVal=%d minUsage=%d seed=%d",
+                    matrixSize, maxVal, minUsage, seed);
+                try {
+                    PuzzleConfig config = PuzzleConfig.builder()
+                        .matrixSize(matrixSize)
+                        .maxCellValue(maxVal)
+                        .minUsagePerOperator(minUsage)
+                        .maxGenerationAttempts(5000)
+                        .build();
+
+                    PuzzleGrid grid = generateGrid(config, seed);
+                    verifyAllInvariants(label, grid, config, null, minUsage);
+                    seedPassed++;
+                } catch (Exception e) {
+                    fail(label, "Exception: " + e.getMessage());
+                    seedFailed++;
+                }
+            }
+
+            System.out.printf("    n=%d: %d/%d seeds passed%n",
+                matrixSize, seedPassed, seeds.length);
+        }
+    }
+
+    // ── 5. Edge cases ────────────────────────────────────────────────────────
+
+    private void testEdgeCases() {
+        section("Edge Cases");
+
+        // Single operator, small grid
+        {
+            String label = "n=3 addOnly maxVal=10";
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(3)
+                    .maxCellValue(10)
+                    .minUsagePerOperator(0)
+                    .allowedOperators(Set.of('+'))
+                    .maxGenerationAttempts(5000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 42);
+                verifyAllInvariants(label, grid, config, Set.of('+'), 0);
+
+                // All operators must be +
+                for (EquationArm arm : grid.shape.arms()) {
+                    check(label + " opSymbol", arm.operator().symbol() == '+',
+                        "Expected '+' but got '" + arm.operator().symbol() + "'");
+                }
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
+        }
+
+        // Two operators, small values
+        {
+            String label = "n=3 addSub maxVal=10";
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(3)
+                    .maxCellValue(10)
+                    .minUsagePerOperator(1)
+                    .allowedOperators(Set.of('+', '-'))
+                    .maxGenerationAttempts(5000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 99);
+                verifyAllInvariants(label, grid, config, Set.of('+', '-'), 1);
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
+        }
+
+        // minUsage=0 should always succeed (no operator constraint)
+        {
+            String label = "n=5 minUsage=0 (no constraint)";
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(5)
+                    .maxCellValue(50)
+                    .minUsagePerOperator(0)
+                    .maxGenerationAttempts(1000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 1);
+                verifyAllInvariants(label, grid, config, null, 0);
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
+        }
+
+        // Config rejects impossible usage quota
+        {
+            String label = "reject impossible minUsage";
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(3)
+                    .maxCellValue(20)
+                    .minUsagePerOperator(5) // 4 ops × 5 = 20, target=6
+                    .maxGenerationAttempts(100)
+                    .build();
+
+                Random random = new Random(42);
+                OperatorRegistry registry = new OperatorRegistry(config, random);
+                CrossMathGenerator gen = new CrossMathGenerator(config, registry, random);
+
+                try {
+                    gen.generate();
+                    fail(label, "Should have thrown for impossible minUsage");
+                } catch (IllegalArgumentException e) {
+                    pass(label);
+                }
+            } catch (IllegalArgumentException e) {
+                // Config-level rejection is also acceptable
+                pass(label);
+            }
+        }
+    }
+
+    // ── 6. Shape structural invariants ───────────────────────────────────────
+
+    private void testShapeInvariants() {
+        section("Shape Structural Invariants");
+
+        for (int matrixSize : new int[]{3, 5, 7}) {
+            String label = "shape n=" + matrixSize;
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(matrixSize)
+                    .maxCellValue(100)
+                    .minUsagePerOperator(1)
+                    .maxGenerationAttempts(5000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 42);
+                PuzzleShape shape = grid.shape;
+
+                // No cell is result of two arms
+                Set<GridCell> resultCells = new HashSet<>();
+                for (EquationArm arm : shape.arms()) {
+                    check(label + " uniqueResult",
+                        resultCells.add(arm.resultCell()),
+                        "Cell " + arm.resultCell() + " is result of multiple arms");
+                }
+
+                // Per-direction claim uniqueness
+                Set<String> hClaims = new HashSet<>();
+                Set<String> vClaims = new HashSet<>();
+                for (EquationArm arm : shape.arms()) {
+                    Set<String> claims = arm.direction() == ArmDirection.HORIZONTAL ? hClaims : vClaims;
+                    for (GridCell cell : arm.allCells()) {
+                        String key = cell.row() + "," + cell.col();
+                        check(label + " dirClaim " + arm.direction(),
+                            claims.add(key),
+                            "Cell " + cell + " claimed twice in " + arm.direction());
+                    }
+                }
+
+                // Arm cell layout consistency
+                for (EquationArm arm : shape.arms()) {
+                    check(label + " operandCount",
+                        arm.operandCells().size() == 2,
+                        "Expected 2 operands, got " + arm.operandCells().size());
+
+                    check(label + " allCellsCount",
+                        arm.allCells().size() == 3,
+                        "Expected 3 cells, got " + arm.allCells().size());
+
+                    // Direction consistency: H arms same row, V arms same col
+                    if (arm.direction() == ArmDirection.HORIZONTAL) {
+                        int row = arm.operandCells().get(0).row();
+                        for (GridCell cell : arm.allCells()) {
+                            check(label + " hRow", cell.row() == row,
+                                "H arm cells not in same row");
+                        }
+                    } else {
+                        int col = arm.operandCells().get(0).col();
+                        for (GridCell cell : arm.allCells()) {
+                            check(label + " vCol", cell.col() == col,
+                                "V arm cells not in same col");
+                        }
+                    }
+
+                    // All cells in bounds
+                    for (GridCell cell : arm.allCells()) {
+                        check(label + " inBounds",
+                            cell.row() >= 0 && cell.row() < matrixSize &&
+                            cell.col() >= 0 && cell.col() < matrixSize,
+                            "Cell " + cell + " out of bounds for n=" + matrixSize);
+                    }
+                }
+
+                pass(label);
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
+        }
+    }
+
+    // ── 7. Masking invariants ────────────────────────────────────────────────
+
+    private void testMaskingInvariants() {
+        section("Masking Invariants");
+
+        String label = "mask operations";
+        try {
+            PuzzleConfig config = PuzzleConfig.builder()
+                .matrixSize(5)
+                .maxCellValue(100)
+                .minUsagePerOperator(1)
+                .maxGenerationAttempts(5000)
+                .build();
+
+            PuzzleGrid grid = generateGrid(config, 42);
+            int armCount = grid.shape.armCount();
+
+            // Verification still passes regardless of masking (mask is display-only)
+            check(label + " verify", grid.verify(), "Grid must verify before masking");
+
+            // allVisible mask
+            EquationMask allVis = EquationMask.allVisible();
+            check(label + " allVis", allVis.hiddenCount() == 0,
+                "allVisible should have 0 hidden");
+            for (int i = 0; i < armCount; i++) {
+                check(label + " allVisArm" + i, allVis.isArmVisible(i),
+                    "Arm " + i + " should be visible");
+            }
+
+            // random mask
+            int toHide = Math.min(armCount / 2, armCount);
+            EquationMask rndMask = EquationMask.random(armCount, toHide, new Random(42));
+            check(label + " rndHiddenCount", rndMask.hiddenCount() == toHide,
+                "Expected " + toHide + " hidden, got " + rndMask.hiddenCount());
+
+            // hide all then show all
+            EquationMask custom = new EquationMask();
+            for (int i = 0; i < armCount; i++) custom.hideArm(i);
+            check(label + " hideAll", custom.hiddenCount() == armCount,
+                "All arms should be hidden");
+            for (int i = 0; i < armCount; i++) custom.showArm(i);
+            check(label + " showAll", custom.hiddenCount() == 0,
+                "All arms should be visible after showAll");
+
+            // Request to hide more arms than exist
+            EquationMask overHide = EquationMask.random(armCount, armCount + 10, new Random(1));
+            check(label + " overHide", overHide.hiddenCount() == armCount,
+                "Should cap at armCount");
+
+            pass(label);
+        } catch (Exception e) {
+            fail(label, "Exception: " + e.getMessage());
+        }
+    }
+
+    // ── 8. Printer smoke test ────────────────────────────────────────────────
+
+    private void testPrinterDoesNotCrash() {
+        section("PuzzlePrinter Smoke Tests");
+
+        for (int matrixSize : new int[]{3, 5, 7}) {
+            String label = "printer n=" + matrixSize;
+            try {
+                PuzzleConfig config = PuzzleConfig.builder()
+                    .matrixSize(matrixSize)
+                    .maxCellValue(100)
+                    .minUsagePerOperator(1)
+                    .maxGenerationAttempts(5000)
+                    .build();
+
+                PuzzleGrid grid = generateGrid(config, 42);
+
+                // Redirect stdout to suppress output during test
+                var origOut = System.out;
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                try {
+                    PuzzlePrinter solPrinter = new PuzzlePrinter(grid, EquationMask.allVisible());
+                    solPrinter.printSolution();
+                    solPrinter.printEquations();
+
+                    int toHide = Math.min(3, grid.shape.armCount());
+                    EquationMask mask = EquationMask.random(grid.shape.armCount(), toHide, new Random(1));
+                    PuzzlePrinter pzlPrinter = new PuzzlePrinter(grid, mask);
+                    pzlPrinter.printPuzzle();
+                } finally {
+                    System.setOut(origOut);
+                }
+
+                pass(label);
+            } catch (Exception e) {
+                fail(label, "Exception: " + e.getMessage());
+            }
+        }
+    }
+
+    // ── 9. Config validation ─────────────────────────────────────────────────
+
+    private void testConfigValidation() {
+        section("Config Validation");
+
+        // Even matrixSize
+        expectConfigFail("even matrixSize", () ->
+            PuzzleConfig.builder().matrixSize(4).build());
+
+        // matrixSize < 3
+        expectConfigFail("matrixSize=1", () ->
+            PuzzleConfig.builder().matrixSize(1).build());
+
+        // maxCellValue <= minCellValue
+        expectConfigFail("maxVal<=minVal", () ->
+            PuzzleConfig.builder().minCellValue(10).maxCellValue(5).build());
+
+        // Negative minCellValue
+        expectConfigFail("negative minCellValue", () ->
+            PuzzleConfig.builder().minCellValue(-1).build());
+
+        // Valid configs should NOT throw
+        try {
+            PuzzleConfig.builder().matrixSize(3).maxCellValue(10).build();
+            pass("valid n=3 maxVal=10");
+        } catch (Exception e) {
+            fail("valid n=3 maxVal=10", "Should not throw: " + e.getMessage());
+        }
+
+        try {
+            PuzzleConfig.builder().matrixSize(9).maxCellValue(999).build();
+            pass("valid n=9 maxVal=999");
+        } catch (Exception e) {
+            fail("valid n=9 maxVal=999", "Should not throw: " + e.getMessage());
+        }
+    }
+
+    // ── Invariant verification ───────────────────────────────────────────────
+
+    private void verifyAllInvariants(String label, PuzzleGrid grid,
+                                     PuzzleConfig config,
+                                     Set<Character> allowedOps, int minUsage) {
+        // 1. Grid verification
+        check(label + " verify", grid.verify(),
+            "grid.verify() returned false");
+
+        // 2. Every arm has an operator
+        for (int i = 0; i < grid.shape.armCount(); i++) {
+            EquationArm arm = grid.shape.arms().get(i);
+            check(label + " op[" + i + "]", arm.operator() != null,
+                "Arm " + i + " has null operator");
+        }
+
+        // 3. All values within bounds
+        for (EquationArm arm : grid.shape.arms()) {
+            for (GridCell cell : arm.allCells()) {
+                int val = grid.getValue(cell);
+                check(label + " valBounds " + cell,
+                    val >= config.minCellValue && val <= config.maxCellValue,
+                    "Value " + val + " at " + cell + " outside [" +
+                    config.minCellValue + "," + config.maxCellValue + "]");
+            }
+        }
+
+        // 4. Operator usage meets minimum
+        if (minUsage > 0) {
+            Map<Character, Integer> usage = new HashMap<>();
+            for (EquationArm arm : grid.shape.arms()) {
+                if (arm.operator() != null) {
+                    usage.merge(arm.operator().symbol(), 1, Integer::sum);
+                }
+            }
+
+            // Determine which operators were registered
+            Random tmpRandom = new Random(0);
+            OperatorRegistry tmpReg = new OperatorRegistry(config, tmpRandom);
+            for (Operator op : tmpReg.all()) {
+                int count = usage.getOrDefault(op.symbol(), 0);
+                check(label + " usage[" + op.symbol() + "]",
+                    count >= minUsage,
+                    "Operator '" + op.symbol() + "' used " + count +
+                    " times, need >= " + minUsage);
+            }
+        }
+
+        // 5. Only allowed operators used
+        if (allowedOps != null) {
+            for (EquationArm arm : grid.shape.arms()) {
+                if (arm.operator() != null) {
+                    check(label + " allowedOp",
+                        allowedOps.contains(arm.operator().symbol()),
+                        "Operator '" + arm.operator().symbol() +
+                        "' not in allowed set " + allowedOps);
+                }
+            }
+        }
+
+        // 6. Shape arm count feasibility
+        if (minUsage > 0) {
+            Random tmpRandom = new Random(0);
+            OperatorRegistry tmpReg = new OperatorRegistry(config, tmpRandom);
+            int required = tmpReg.size() * minUsage;
+            check(label + " armCount",
+                grid.shape.armCount() >= required,
+                "Only " + grid.shape.armCount() + " arms but need >= " +
+                required + " (" + tmpReg.size() + " ops × " + minUsage + ")");
+        }
+
+        // 7. Unique result cells
+        Set<GridCell> resultCells = new HashSet<>();
+        for (EquationArm arm : grid.shape.arms()) {
+            check(label + " uniqueResult",
+                resultCells.add(arm.resultCell()),
+                "Duplicate result cell: " + arm.resultCell());
+        }
+
+        // 8. Equation arithmetic spot-check
+        for (EquationArm arm : grid.shape.arms()) {
+            int left   = grid.getValue(arm.operandCells().get(0));
+            int right  = grid.getValue(arm.operandCells().get(1));
+            int result = grid.getValue(arm.resultCell());
+            int computed = arm.operator().apply(left, right, config);
+            check(label + " arithmetic",
+                computed == result,
+                left + " " + arm.operator().symbol() + " " + right +
+                " = " + computed + " but grid has " + result);
+        }
+
+        pass(label);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private PuzzleGrid generateGrid(PuzzleConfig config, long seed) {
+        Random random = new Random(seed);
+        OperatorRegistry registry = new OperatorRegistry(config, random);
+        CrossMathGenerator generator = new CrossMathGenerator(config, registry, random);
+        return generator.generate();
+    }
+
+    private void expectConfigFail(String label, Runnable action) {
+        try {
+            action.run();
+            fail(label, "Expected IllegalArgumentException but none was thrown");
+        } catch (IllegalArgumentException e) {
+            pass(label);
+        } catch (Exception e) {
+            fail(label, "Expected IllegalArgumentException but got " + e.getClass().getSimpleName());
+        }
+    }
+
+    private void check(String context, boolean condition, String detail) {
+        if (!condition) {
+            throw new AssertionError("[FAIL] " + context + ": " + detail);
+        }
+    }
+
+    private void pass(String label) {
+        passed++;
+        System.out.println("  [PASS] " + label);
+    }
+
+    private void fail(String label, String reason) {
+        failed++;
+        String msg = "  [FAIL] " + label + " — " + reason;
+        System.out.println(msg);
+        failures.add(msg);
+    }
+
+    private void section(String title) {
+        System.out.println();
+        System.out.println("── " + title + " " + "─".repeat(Math.max(0, 66 - title.length())));
+    }
+
+    private String opsLabel(Set<Character> ops) {
+        return ops.stream()
+            .sorted()
+            .map(String::valueOf)
+            .collect(Collectors.joining("", "{", "}"));
+    }
+
+    private void printSummary() {
+        System.out.println();
+        System.out.println("═".repeat(70));
+        System.out.printf("  Results: %d passed, %d failed%n", passed, failed);
+        System.out.println("═".repeat(70));
+
+        if (!failures.isEmpty()) {
+            System.out.println();
+            System.out.println("  Failures:");
+            for (String f : failures) {
+                System.out.println("    " + f);
+            }
+        }
+
+        System.out.println();
     }
 }

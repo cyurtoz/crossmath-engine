@@ -54,7 +54,7 @@ public class MultiplyOperator implements Operator {
         if (leftOperand  < 2) return Integer.MIN_VALUE;
         if (rightOperand < 2) return Integer.MIN_VALUE;
 
-        if ((long) leftOperand * rightOperand > config.maxMultiplyResult) {
+        if ((long) leftOperand * rightOperand > config.maxCellValue) {
             return Integer.MIN_VALUE;
         }
 
@@ -85,7 +85,7 @@ public class MultiplyOperator implements Operator {
             return valid;
         }
 
-        int maxRight = config.maxMultiplyResult / leftOperand;
+        int maxRight = config.maxCellValue / leftOperand;
 
         for (int right = 2; right <= maxRight; right++) {
             if (apply(leftOperand, right, config) != Integer.MIN_VALUE) {

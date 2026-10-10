@@ -8,162 +8,172 @@ LEVEL 0
 
 numbers: 0–10
 operators: + only
-equations: 1 unknown per equation
+addition: operands ≤ 10, result ≤ 10
+equations: 1 unknown
 visible: 85–95%
-operators: always visible
-results: always visible
-options: 3 choices
-distractors: ±1
-avoid: carry (e.g. 8+7)
-goal: basic addition recognition
+options: 3
+goal: addition within 10
 
 LEVEL 1
 
 numbers: 0–10
 operators: +
+addition: operands ≤ 10, result ≤ 10 (allow carry)
 equations: 1 unknown
 visible: 75–85%
-operators: visible
-results: mostly visible
-options: 3 choices
-distractors: ±1, swapped numbers
-allow: light carry
+options: 3
 goal: addition fluency
 
-LEVEL 1.5 (end of grade 1)
+LEVEL 1.5
 
 numbers: 0–10
-operators: +, - (no negatives)
+operators: +, -
+addition: operands ≤ 10
+subtraction: left ≤ 10, right ≤ left (no negatives)
 equations: 1 unknown
 visible: 70–80%
-operators: visible
-results: mostly visible
-options: 3–4 choices
-distractors: inverse confusion (a+b vs a-b)
-avoid: a-a=0 dominance
-goal: intro subtraction + inverse thinking
+options: 3–4
+goal: intro subtraction
 
 LEVEL 2
 
 numbers: 0–20
 operators: +, -
-equations: 1–2 unknowns (not same equation)
+addition: operands ≤ 20
+subtraction: left ≤ 20, right ≤ left
+equations: 1–2 unknowns
 visible: 65–75%
-operators: visible
-results: mostly visible
-options: 3–4 choices
-distractors: off-by-one, carry mistakes
-goal: add/sub fluency within 20
+options: 3–4
+goal: add/sub within 20
 
-LEVEL 2.5 (end of grade 2)
+LEVEL 2.5
 
 numbers: 0–20
 operators: +, -
+addition: operands ≤ 20
+subtraction: left ≤ 20, right ≤ left
 equations: 1–2 unknowns
 visible: 60–70%
-operators: mostly visible
-results: partially hidden
-options: 4 choices
-distractors: reversed operations, near values
-allow: more intersections
-goal: stronger inverse reasoning
+options: 4
+goal: inverse reasoning
 
 LEVEL 3
 
 numbers: 0–50
-operators: +, -, * (intro)
+operators: +, -, *
+addition/subtraction: ≤ 50
+multiplication:
+one operand ≤ 10
+second operand ≤ 5
+result ≤ 50
 equations: 1–2 unknowns
 visible: 55–65%
-operators: mostly visible
-results: partially hidden
-options: 4 choices
-distractors: table confusion (e.g. 6×3 vs 5×3)
-avoid: large products early
+options: 4
 goal: intro multiplication
 
-LEVEL 3.5 (end of grade 3)
+LEVEL 3.5
 
 numbers: 0–50
 operators: +, -, *
-equations: 2 unknowns possible
+addition/subtraction: ≤ 50
+multiplication:
+both operands ≤ 10
+result ≤ 100 (prefer ≤ 50 early)
+equations: 2 unknowns allowed
 visible: 50–60%
-operators: sometimes hidden
-results: often hidden
-options: 4 choices
-distractors: factor confusion
-goal: multiplication fluency + deduction
+options: 4
+goal: multiplication fluency
 
 LEVEL 4
 
 numbers: 0–100
-operators: +, -, *, / (exact only)
+operators: +, -, *, /
+addition/subtraction: ≤ 100
+multiplication: operands ≤ 10 (extend gradually)
+division:
+exact only
+divisor ≤ 10
+result ≤ 10–20
 equations: 2–3 unknowns
 visible: 45–55%
-operators: sometimes hidden
-results: often hidden
-options: 4 choices
-distractors: divisor/multiple confusion
-avoid: non-integer division
+options: 4
 goal: mixed arithmetic
 
-LEVEL 4.5 (end of grade 4)
+LEVEL 4.5
 
 numbers: 0–100
 operators: +, -, *, /
+addition/subtraction: ≤ 100
+multiplication: operands ≤ 12
+division:
+exact only
+divisor ≤ 12
+result ≤ 12
 equations: multi-step
 visible: 40–50%
-operators: partially hidden
-results: mostly hidden
-options: 4–5 choices
-distractors: multi-step traps
+options: 4–5
 goal: structured reasoning
 
 LEVEL 5
 
 numbers: 0–200
 operators: +, -, *, /, avg, min, max
+addition/subtraction: ≤ 200
+multiplication: operands ≤ 15
+division: exact, divisor ≤ 15
+avg: (a+b)/2 integer only
+min/max: unrestricted within bounds
 equations: multi-unknown
 visible: 35–45%
-operators: partially hidden
-results: mostly hidden
-options: 4–5 choices
-distractors: logic traps
-goal: logical structure
+options: 4–5
+goal: logical reasoning
 
-LEVEL 5.5 (end of grade 5)
+LEVEL 5.5
 
 numbers: 0–200
 operators: +, -, *, /, avg, min, max
+multiplication: operands ≤ 20
+division: divisor ≤ 20
+avg: integer only
 equations: complex intersections
 visible: 30–40%
-operators: often hidden
-results: mostly hidden
-options: 5 choices
+options: 5
 goal: multi-step deduction
 
 LEVEL 6+
 
-numbers: 0–500 (2–3 digit)
+numbers: 0–500
 operators: all + optional ^, root
+multiplication: operands ≤ 25
+division: divisor ≤ 25
+exponent:
+base ≤ 10
+exponent ≤ 3
+root:
+degree 2–3
+perfect powers only
 equations: chain reasoning
 visible: 20–35%
-operators: often hidden
-results: mostly hidden
-options: 5 choices
+options: 5
 goal: advanced reasoning
 
 GLOBAL RULES
 
-always keep ≥1 visible anchor per equation
-early levels: do not hide operators
+always keep ≥1 anchor per equation
+early levels: operators always visible
 hide non-intersection cells first
-intersections become key after level 3
-avoid multiple unknowns in one equation early
+intersections become critical after level 3
 ensure single correct answer
-selection options must include:
-correct answer
+selection options include:
+correct
 near mistake
-common misconception
+misconception
+
+KEY INSIGHT
+
+difficulty is controlled per operator, not just max number
+multiplication/division must scale independently
+early multiplication = small factors, not small results
 
 PROGRESSION LOGIC
 
