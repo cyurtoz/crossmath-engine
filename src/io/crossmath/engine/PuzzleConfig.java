@@ -257,11 +257,15 @@ public final class PuzzleConfig {
         if (builder.targetEquationCount > 0) {
             this.targetEquationCount = builder.targetEquationCount;
         } else {
-            // Dense for small grids (matrixSize=3), sparse for larger
             int epl = this.equationsPerLine;
-            this.targetEquationCount = builder.matrixSize <= 3
-                ? builder.matrixSize * epl * 2   // full dense (e.g. 6 for 3×3)
-                : builder.matrixSize * epl;       // ~half density
+            if (builder.matrixSize <= 3) {
+                // A 3×3 grid can hold at most 5 arms: the bottom-right cell
+                // would be the result of both the last H and last V arm,
+                // violating the unique-result constraint.
+                this.targetEquationCount = builder.matrixSize * epl * 2 - 1;
+            } else {
+                this.targetEquationCount = builder.matrixSize * epl;
+            }
         }
 
         // Operator filtering

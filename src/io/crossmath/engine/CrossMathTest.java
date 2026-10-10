@@ -84,7 +84,7 @@ public class CrossMathTest {
         //   - addition-only needs generous maxVal to avoid sum overflow
         //   - n=3 shapes produce ~5 arms max, so 3+ ops × 2 is infeasible
         Object[][] combos = {
-            // ── matrixSize=3 (target=6, shape ~5 arms) ──
+            // ── matrixSize=3 (target=5, max for 3×3 grid) ──
             {3, 50,  Set.of('+'),               0},  // add-only: needs maxVal headroom for sum cascades
             {3, 20,  Set.of('+', '-'),           1},
             {3, 20,  Set.of('+', '-', '*'),      1},  // 3 ops × 1 = 3 ≤ 5
